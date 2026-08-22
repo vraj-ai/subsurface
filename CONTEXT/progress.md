@@ -1,5 +1,5 @@
 # Progress
 
-- Current milestone: M3 First Finding (#9, #12, #14).
-- Last verified milestone: M2 Evidence engine (#5, #6, #7, #11).
-- Verification: `cargo test --workspace` passed all 14 tests (evidence walk with rename/reformat/merge tracking, co-commit test/doc linkage, budget ranking and exclusion recording, rule-based Confidence levels).
+- Current milestone: M4 Product surface (#13, #15, #16).
+- Last verified milestone: M3 First Finding (#9, #12, #14).
+- Verification: `cargo test --workspace` passed all 20 tests (single seam `excavate()`, no-rationale fixture asserting nothing and saying so, provider presets/Ollama, SQLite Field Notes and finding cache invalidation on touching commits, zero writes to user repos).
