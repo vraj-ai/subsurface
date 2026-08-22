@@ -1,0 +1,6 @@
+[workspace]
+members = [
+    "crates/subsurface-engine",
+    "crates/subsurface-app",
+]
+resolver = "2"
