@@ -1,5 +1,5 @@
 # Progress
 
-- Current milestone: M4 Product surface (#13, #15, #16).
-- Last verified milestone: M3 First Finding (#9, #12, #14).
-- Verification: `cargo test --workspace` passed all 20 tests (single seam `excavate()`, no-rationale fixture asserting nothing and saying so, provider presets/Ollama, SQLite Field Notes and finding cache invalidation on touching commits, zero writes to user repos).
+- Current milestone: M5 Site Report and OAuth (#10, #17).
+- Last verified milestone: M4 Product surface (#13, #15, #16).
+- Verification: `cargo test --workspace` passed all 24 tests (Tauri UI 3-pane surface, staleness flags only on receipts, in-process MCP server with shared Field Notes).

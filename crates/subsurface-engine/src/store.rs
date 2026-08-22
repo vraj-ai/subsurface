@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::Mutex;
 use chrono::Utc;
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
@@ -17,6 +18,8 @@ pub enum StoreError {
     Serde(#[from] serde_json::Error),
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
+    #[error("Lock error")]
+    Lock,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -33,7 +36,7 @@ pub struct FieldNote {
 }
 
 pub struct SqliteStore {
-    conn: Connection,
+    conn: Mutex<Connection>,
 }
 
 impl SqliteStore {
@@ -43,20 +46,25 @@ impl SqliteStore {
             std::fs::create_dir_all(parent)?;
         }
         let conn = Connection::open(db_path)?;
-        let store = Self { conn };
+        let store = Self {
+            conn: Mutex::new(conn),
+        };
         store.init_tables()?;
         Ok(store)
     }
 
     pub fn in_memory() -> Result<Self, StoreError> {
         let conn = Connection::open_in_memory()?;
-        let store = Self { conn };
+        let store = Self {
+            conn: Mutex::new(conn),
+        };
         store.init_tables()?;
         Ok(store)
     }
 
     fn init_tables(&self) -> Result<(), StoreError> {
-        self.conn.execute_batch(
+        let conn = self.conn.lock().map_err(|_| StoreError::Lock)?;
+        conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS field_notes (
                 id TEXT PRIMARY KEY,
                 site_path TEXT NOT NULL,
@@ -102,7 +110,8 @@ impl SqliteStore {
             .unwrap_or("");
         let finding_json = serde_json::to_string(finding)?;
 
-        self.conn.execute(
+        let conn = self.conn.lock().map_err(|_| StoreError::Lock)?;
+        conn.execute(
             "INSERT INTO field_notes (id, site_path, file_path, line_start, line_end, commit_sha, created_at, updated_at, user_notes, finding_json)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
             params![
@@ -123,7 +132,8 @@ impl SqliteStore {
     }
 
     pub fn get_field_note(&self, id: &str) -> Result<Option<FieldNote>, StoreError> {
-        let mut stmt = self.conn.prepare(
+        let conn = self.conn.lock().map_err(|_| StoreError::Lock)?;
+        let mut stmt = conn.prepare(
             "SELECT id, site_path, file_path, line_start, line_end, commit_sha, created_at, updated_at, user_notes, finding_json
              FROM field_notes WHERE id = ?1",
         )?;
@@ -163,7 +173,8 @@ impl SqliteStore {
 
     pub fn list_field_notes(&self, site_path: &Path) -> Result<Vec<FieldNote>, StoreError> {
         let site_str = site_path.to_string_lossy().to_string();
-        let mut stmt = self.conn.prepare(
+        let conn = self.conn.lock().map_err(|_| StoreError::Lock)?;
+        let mut stmt = conn.prepare(
             "SELECT id, site_path, file_path, line_start, line_end, commit_sha, created_at, updated_at, user_notes, finding_json
              FROM field_notes WHERE site_path = ?1 ORDER BY created_at DESC",
         )?;
@@ -244,9 +255,8 @@ impl SqliteStore {
     }
 
     pub fn delete_field_note(&self, id: &str) -> Result<bool, StoreError> {
-        let count = self
-            .conn
-            .execute("DELETE FROM field_notes WHERE id = ?1", params![id])?;
+        let conn = self.conn.lock().map_err(|_| StoreError::Lock)?;
+        let count = conn.execute("DELETE FROM field_notes WHERE id = ?1", params![id])?;
         Ok(count > 0)
     }
 
@@ -262,7 +272,8 @@ impl SqliteStore {
         let now = Utc::now().to_rfc3339();
         let finding_json = serde_json::to_string(finding)?;
 
-        self.conn.execute(
+        let conn = self.conn.lock().map_err(|_| StoreError::Lock)?;
+        conn.execute(
             "INSERT OR REPLACE INTO finding_cache (site_path, file_path, line_start, line_end, head_commit_sha, created_at, finding_json)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             params![
@@ -287,7 +298,8 @@ impl SqliteStore {
         head_commit_sha: &str,
     ) -> Result<Option<Finding>, StoreError> {
         let site_str = site_path.to_string_lossy().to_string();
-        let mut stmt = self.conn.prepare(
+        let conn = self.conn.lock().map_err(|_| StoreError::Lock)?;
+        let mut stmt = conn.prepare(
             "SELECT head_commit_sha, finding_json FROM finding_cache
              WHERE site_path = ?1 AND file_path = ?2 AND line_start = ?3 AND line_end = ?4",
         )?;

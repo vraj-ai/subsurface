@@ -3,6 +3,8 @@ pub mod confidence;
 pub mod evidence;
 pub mod excavate;
 pub mod fixture;
+pub mod mcp;
 pub mod provider;
 pub mod site;
+pub mod staleness;
 pub mod store;

@@ -3,9 +3,752 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Subsurface</title>
+  <title>Subsurface — Git History Archaeology</title>
+  <style>
+    :root {
+      --bg-dark: #0f1117;
+      --bg-panel: #161922;
+      --bg-panel-header: #1e222d;
+      --bg-card: #202534;
+      --bg-card-hover: #272d3f;
+      --border-color: #2e3446;
+      --text-primary: #e6edf3;
+      --text-secondary: #8b949e;
+      --text-muted: #6e7681;
+      --accent-blue: #388bfd;
+      --accent-green: #238636;
+      --accent-amber: #d29922;
+      --accent-red: #da3633;
+      --badge-stated: #238636;
+      --badge-inferred: #d29922;
+      --badge-none: #6e7681;
+      --font-code: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+      --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: var(--font-ui);
+      background-color: var(--bg-dark);
+      color: var(--text-primary);
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      font-size: 13px;
+    }
+
+    header {
+      background: var(--bg-panel-header);
+      border-bottom: 1px solid var(--border-color);
+      padding: 8px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-shrink: 0;
+    }
+
+    .brand {
+      font-weight: 700;
+      font-size: 14px;
+      letter-spacing: 0.5px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .brand-tag {
+      font-size: 10px;
+      background: #2e3446;
+      color: var(--text-secondary);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-weight: normal;
+    }
+
+    .header-center {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex: 1;
+      max-width: 600px;
+    }
+
+    input[type="text"], input[type="number"] {
+      background: var(--bg-dark);
+      border: 1px solid var(--border-color);
+      color: var(--text-primary);
+      padding: 5px 10px;
+      border-radius: 4px;
+      font-size: 12px;
+      outline: none;
+    }
+
+    input[type="text"]:focus {
+      border-color: var(--accent-blue);
+    }
+
+    button {
+      background: #2b313f;
+      color: var(--text-primary);
+      border: 1px solid var(--border-color);
+      padding: 5px 12px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 500;
+      transition: background 0.15s;
+    }
+
+    button:hover {
+      background: #363d4e;
+    }
+
+    button.primary {
+      background: var(--accent-blue);
+      border-color: var(--accent-blue);
+      color: #fff;
+    }
+
+    button.primary:hover {
+      background: #4b97fd;
+    }
+
+    .container {
+      display: grid;
+      grid-template-columns: 240px 1fr 380px;
+      flex: 1;
+      height: calc(100vh - 45px);
+      overflow: hidden;
+    }
+
+    .panel {
+      background: var(--bg-panel);
+      border-right: 1px solid var(--border-color);
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      overflow: hidden;
+    }
+
+    .panel-header {
+      background: var(--bg-panel-header);
+      padding: 8px 12px;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-secondary);
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .panel-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 12px;
+    }
+
+    /* Repository Pane */
+    .file-tree {
+      list-style: none;
+    }
+
+    .file-item {
+      padding: 4px 8px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-family: var(--font-code);
+      font-size: 12px;
+      color: var(--text-secondary);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .file-item:hover {
+      background: var(--bg-card);
+      color: var(--text-primary);
+    }
+
+    .file-item.active {
+      background: #242c3f;
+      color: var(--accent-blue);
+      font-weight: 600;
+    }
+
+    /* Code Pane */
+    .code-viewer-container {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      overflow: hidden;
+      background: var(--bg-dark);
+    }
+
+    .code-toolbar {
+      padding: 6px 12px;
+      background: var(--bg-panel-header);
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .code-content {
+      flex: 1;
+      overflow: auto;
+      font-family: var(--font-code);
+      font-size: 12px;
+      line-height: 1.5;
+      padding: 8px 0;
+    }
+
+    .code-row {
+      display: flex;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .code-row:hover {
+      background: rgba(255, 255, 255, 0.03);
+    }
+
+    .code-row.selected {
+      background: rgba(56, 139, 253, 0.18);
+    }
+
+    .line-number {
+      width: 45px;
+      text-align: right;
+      padding-right: 12px;
+      color: var(--text-muted);
+      flex-shrink: 0;
+    }
+
+    .line-text {
+      white-space: pre;
+      color: #c9d1d9;
+      flex: 1;
+    }
+
+    /* Archaeology Pane */
+    .archaeology-panel {
+      border-right: none;
+      background: #141720;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 12px;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .badge-stated {
+      background: rgba(35, 134, 54, 0.2);
+      color: #3fb950;
+      border: 1px solid #238636;
+    }
+
+    .badge-inferred {
+      background: rgba(210, 153, 34, 0.2);
+      color: #e3b341;
+      border: 1px solid #d29922;
+    }
+
+    .badge-none {
+      background: rgba(110, 118, 129, 0.2);
+      color: #8b949e;
+      border: 1px solid #6e7681;
+    }
+
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      padding: 12px;
+      margin-bottom: 12px;
+    }
+
+    .card-title {
+      font-size: 11px;
+      text-transform: uppercase;
+      font-weight: 600;
+      color: var(--text-secondary);
+      margin-bottom: 8px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .rationale-text {
+      font-size: 13px;
+      line-height: 1.5;
+      color: var(--text-primary);
+      margin-bottom: 8px;
+    }
+
+    .timeline-item {
+      border-left: 2px solid #2e3446;
+      padding-left: 10px;
+      margin-left: 4px;
+      margin-bottom: 12px;
+      position: relative;
+    }
+
+    .timeline-item::before {
+      content: "";
+      position: absolute;
+      left: -5px;
+      top: 4px;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--accent-blue);
+    }
+
+    .diff-block {
+      background: var(--bg-dark);
+      border: 1px solid var(--border-color);
+      border-radius: 4px;
+      font-family: var(--font-code);
+      font-size: 11px;
+      padding: 6px 8px;
+      white-space: pre-wrap;
+      max-height: 120px;
+      overflow-y: auto;
+      margin-top: 4px;
+      color: #8b949e;
+    }
+
+    .diff-block .add { color: #3fb950; }
+    .diff-block .del { color: #f85149; }
+
+    .modal {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.7);
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+    }
+
+    .modal.active {
+      display: flex;
+    }
+
+    .modal-content {
+      background: var(--bg-panel);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      width: 600px;
+      max-height: 80vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .modal-header {
+      padding: 12px 16px;
+      background: var(--bg-panel-header);
+      font-weight: 600;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      justify-content: space-between;
+    }
+
+    .modal-body {
+      padding: 16px;
+      overflow-y: auto;
+      font-family: var(--font-code);
+      font-size: 12px;
+      white-space: pre-wrap;
+      line-height: 1.4;
+      color: #c9d1d9;
+    }
+
+    .modal-footer {
+      padding: 10px 16px;
+      background: var(--bg-panel-header);
+      border-top: 1px solid var(--border-color);
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+  </style>
 </head>
 <body>
-  <h1>Subsurface</h1>
+  <header>
+    <div class="brand">
+      <span>⚓ Subsurface</span>
+      <span class="brand-tag">v1.0</span>
+    </div>
+    <div class="header-center">
+      <input type="text" id="sitePathInput" placeholder="Site path (e.g. /Users/.../repo)" style="flex: 1;" />
+      <button onclick="openSiteFromInput()">Open Site</button>
+    </div>
+    <div>
+      <span id="mcpIndicator" style="font-size: 11px; color: #3fb950;">● MCP In-Process</span>
+    </div>
+  </header>
+
+  <div class="container">
+    <!-- Panel 1: Repository -->
+    <div class="panel">
+      <div class="panel-header">
+        <span>Files</span>
+        <span id="fileCount" style="font-size: 10px; color: var(--text-muted);">0 files</span>
+      </div>
+      <div class="panel-body">
+        <input type="text" id="fileFilter" placeholder="Filter files..." style="width: 100%; margin-bottom: 8px;" oninput="filterFiles()" />
+        <ul class="file-tree" id="fileList">
+          <li style="color: var(--text-muted); padding: 8px;">No Site opened.</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Panel 2: Code Viewer -->
+    <div class="code-viewer-container">
+      <div class="code-toolbar">
+        <div style="font-family: var(--font-code); font-size: 12px; color: var(--text-secondary);" id="currentFilePath">No file selected</div>
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span style="font-size: 11px; color: var(--text-muted);" id="selectionLabel">Lines: None</span>
+          <button onclick="previewPayload()">Preview Payload</button>
+          <button class="primary" id="excavateBtn" onclick="runExcavate()">Excavate</button>
+        </div>
+      </div>
+      <div class="code-content" id="codeContainer">
+        <div style="padding: 24px; color: var(--text-muted); text-align: center;">Select a file to inspect code and select a region to Excavate.</div>
+      </div>
+    </div>
+
+    <!-- Panel 3: Archaeology / Finding -->
+    <div class="panel archaeology-panel">
+      <div class="panel-header">
+        <span>Archaeology</span>
+        <span id="confidenceBadge" class="badge badge-none">No Selection</span>
+      </div>
+      <div class="panel-body" id="archaeologyBody">
+        <div style="color: var(--text-muted); text-align: center; margin-top: 40px;">
+          Select a line range in the code viewer and press <strong>Excavate</strong> to uncover why it exists.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Payload Preview Modal -->
+  <div class="modal" id="payloadModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <span>Exact Provider Payload Preview (Invariant)</span>
+        <button onclick="closeModal()">✕</button>
+      </div>
+      <div class="modal-body" id="payloadText"></div>
+      <div class="modal-footer">
+        <button onclick="closeModal()">Close</button>
+        <button class="primary" onclick="closeModal(); runExcavate();">Send & Excavate</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let currentSite = null;
+    let currentFile = "";
+    let currentFileLines = [];
+    let selectedStartLine = null;
+    let selectedEndLine = null;
+    let currentFinding = null;
+
+    async function invokeBackend(cmd, args = {}) {
+      if (window.__TAURI__ && window.__TAURI__.core) {
+        return await window.__TAURI__.core.invoke(cmd, args);
+      }
+      console.log(`[mock-invoke] ${cmd}`, args);
+      return null;
+    }
+
+    async function openSiteFromInput() {
+      const input = document.getElementById("sitePathInput").value.trim();
+      if (!input) return;
+      try {
+        const site = await invokeBackend("open_site", { path: input });
+        if (site) {
+          currentSite = site;
+          renderFileList(site.tracked_files);
+        }
+      } catch (err) {
+        alert("Failed to open site: " + err);
+      }
+    }
+
+    function renderFileList(files) {
+      const list = document.getElementById("fileList");
+      document.getElementById("fileCount").innerText = `${files.length} files`;
+      list.innerHTML = "";
+      files.forEach(f => {
+        const li = document.createElement("li");
+        li.className = "file-item";
+        li.innerText = f;
+        li.onclick = () => loadFile(f);
+        list.appendChild(li);
+      });
+    }
+
+    function filterFiles() {
+      if (!currentSite) return;
+      const q = document.getElementById("fileFilter").value.toLowerCase();
+      const filtered = currentSite.tracked_files.filter(f => f.toLowerCase().includes(q));
+      renderFileList(filtered);
+    }
+
+    async function loadFile(relPath) {
+      currentFile = relPath;
+      document.getElementById("currentFilePath").innerText = relPath;
+      document.querySelectorAll(".file-item").forEach(el => {
+        el.classList.toggle("active", el.innerText === relPath);
+      });
+
+      try {
+        const content = await invokeBackend("read_file_content", {
+          sitePath: currentSite.root_path,
+          relPath: relPath
+        });
+        currentFileLines = (content || "").split("\n");
+        renderCodeView();
+      } catch (err) {
+        alert("Failed to read file: " + err);
+      }
+    }
+
+    function renderCodeView() {
+      const container = document.getElementById("codeContainer");
+      container.innerHTML = "";
+      selectedStartLine = null;
+      selectedEndLine = null;
+      updateSelectionUI();
+
+      currentFileLines.forEach((line, idx) => {
+        const lineNum = idx + 1;
+        const row = document.createElement("div");
+        row.className = "code-row";
+        row.dataset.line = lineNum;
+
+        const numDiv = document.createElement("div");
+        numDiv.className = "line-number";
+        numDiv.innerText = lineNum;
+
+        const textDiv = document.createElement("div");
+        textDiv.className = "line-text";
+        textDiv.innerText = line;
+
+        row.appendChild(numDiv);
+        row.appendChild(textDiv);
+
+        row.onclick = (e) => handleLineClick(lineNum, e.shiftKey);
+        container.appendChild(row);
+      });
+    }
+
+    function handleLineClick(lineNum, isShift) {
+      if (!isShift || selectedStartLine === null) {
+        selectedStartLine = lineNum;
+        selectedEndLine = lineNum;
+      } else {
+        selectedEndLine = lineNum;
+      }
+
+      const start = Math.min(selectedStartLine, selectedEndLine);
+      const end = Math.max(selectedStartLine, selectedEndLine);
+
+      document.querySelectorAll(".code-row").forEach(row => {
+        const num = parseInt(row.dataset.line);
+        row.classList.toggle("selected", num >= start && num <= end);
+      });
+
+      updateSelectionUI();
+    }
+
+    function updateSelectionUI() {
+      const label = document.getElementById("selectionLabel");
+      if (selectedStartLine === null) {
+        label.innerText = "Lines: None";
+      } else {
+        const start = Math.min(selectedStartLine, selectedEndLine);
+        const end = Math.max(selectedStartLine, selectedEndLine);
+        label.innerText = `Lines: ${start}–${end}`;
+      }
+    }
+
+    async function previewPayload() {
+      if (!currentSite || !currentFile || selectedStartLine === null) {
+        alert("Please select a file and a line range first.");
+        return;
+      }
+      const start = Math.min(selectedStartLine, selectedEndLine);
+      const end = Math.max(selectedStartLine, selectedEndLine);
+
+      try {
+        const payload = await invokeBackend("preview_payload", {
+          sitePath: currentSite.root_path,
+          filePath: currentFile,
+          startLine: start,
+          endLine: end
+        });
+        document.getElementById("payloadText").innerText = payload;
+        document.getElementById("payloadModal").classList.add("active");
+      } catch (err) {
+        alert("Preview error: " + err);
+      }
+    }
+
+    function closeModal() {
+      document.getElementById("payloadModal").classList.remove("active");
+    }
+
+    async function runExcavate() {
+      if (!currentSite || !currentFile || selectedStartLine === null) {
+        alert("Please select a file and line range first.");
+        return;
+      }
+      const start = Math.min(selectedStartLine, selectedEndLine);
+      const end = Math.max(selectedStartLine, selectedEndLine);
+
+      document.getElementById("excavateBtn").disabled = true;
+      document.getElementById("excavateBtn").innerText = "Digging...";
+
+      try {
+        const finding = await invokeBackend("excavate_range", {
+          sitePath: currentSite.root_path,
+          filePath: currentFile,
+          startLine: start,
+          endLine: end
+        });
+        currentFinding = finding;
+        renderFinding(finding);
+      } catch (err) {
+        alert("Excavate failed: " + err);
+      } finally {
+        document.getElementById("excavateBtn").disabled = false;
+        document.getElementById("excavateBtn").innerText = "Excavate";
+      }
+    }
+
+    function renderFinding(f) {
+      const container = document.getElementById("archaeologyBody");
+      const badge = document.getElementById("confidenceBadge");
+
+      const conf = f.why.confidence.toLowerCase();
+      badge.innerText = f.why.confidence;
+      badge.className = `badge badge-${conf}`;
+
+      let html = `
+        <div class="card">
+          <div class="card-title">
+            <span>Why This Code Exists</span>
+            <span style="font-size: 9px; color: var(--accent-blue);">[Reconstructed from Evidence]</span>
+          </div>
+          <div class="rationale-text">${escapeHtml(f.why.rationale)}</div>
+          <div style="font-size: 11px; color: var(--text-muted); font-style: italic;">
+            ${escapeHtml(f.why.confidence_explanation)}
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">What & When</div>
+          <div style="font-size: 12px; margin-bottom: 6px;">
+            <strong>First Introduced:</strong> ${f.what_when.first_introduced_commit ? f.what_when.first_introduced_commit.substring(0, 7) : 'Unknown'}
+            by ${escapeHtml(f.what_when.first_introduced_author || 'Unknown')} (${f.what_when.first_introduced_timestamp || 'Unknown'})
+          </div>
+          <div style="font-size: 11px; color: var(--text-secondary);">${escapeHtml(f.what_when.evolution_summary)}</div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Timeline (${f.what_when.timeline.length} Commits)</div>
+      `;
+
+      f.what_when.timeline.forEach(t => {
+        html += `
+          <div class="timeline-item">
+            <div style="font-weight: 600; font-size: 12px;">${escapeHtml(t.message.split('\n')[0])}</div>
+            <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 4px;">
+              ${t.commit_sha.substring(0, 7)} · ${escapeHtml(t.author)} · ${t.timestamp}
+            </div>
+            ${t.diff_hunk ? `<div class="diff-block">${escapeHtml(t.diff_hunk)}</div>` : ''}
+          </div>
+        `;
+      });
+
+      html += `</div>`;
+
+      if (f.what_when.related_tests.length > 0 || f.what_when.related_docs.length > 0) {
+        html += `<div class="card"><div class="card-title">Co-Committed Tests & Docs (Heuristic)</div>`;
+        f.what_when.related_tests.forEach(t => {
+          html += `<div style="font-family: var(--font-code); font-size: 11px; color: #3fb950;">✓ [Test] ${escapeHtml(t)}</div>`;
+        });
+        f.what_when.related_docs.forEach(d => {
+          html += `<div style="font-family: var(--font-code); font-size: 11px; color: #58a6ff;">📄 [Doc] ${escapeHtml(d)}</div>`;
+        });
+        html += `</div>`;
+      }
+
+      if (f.budget_summary.excluded.length > 0) {
+        html += `
+          <div class="card">
+            <div class="card-title">Evidence Budget (${f.budget_summary.total_considered} considered, ${f.budget_summary.excluded.length} excluded)</div>
+            <div style="font-size: 11px; color: var(--text-muted);">
+              ${f.budget_summary.excluded.map(ex => `<div>- Commit ${ex.commit_sha.substring(0, 7)}: ${escapeHtml(ex.message_summary)} (${escapeHtml(ex.reason)})</div>`).join('')}
+            </div>
+          </div>
+        `;
+      }
+
+      html += `
+        <div class="card">
+          <div class="card-title">Save to Field Notes</div>
+          <input type="text" id="userNoteInput" placeholder="Add your notes..." style="width: 100%; margin-bottom: 8px;" />
+          <button onclick="saveNote()">Save Field Note</button>
+        </div>
+      `;
+
+      container.innerHTML = html;
+    }
+
+    async function saveNote() {
+      if (!currentFinding || !currentSite) return;
+      const note = document.getElementById("userNoteInput").value;
+      try {
+        await invokeBackend("save_field_note", {
+          sitePath: currentSite.root_path,
+          finding: currentFinding,
+          userNotes: note
+        });
+        alert("Field Note saved!");
+      } catch (err) {
+        alert("Failed to save note: " + err);
+      }
+    }
+
+    function escapeHtml(text) {
+      if (!text) return "";
+      const div = document.createElement("div");
+      div.innerText = text;
+      return div.innerHTML;
+    }
+  </script>
 </body>
 </html>
