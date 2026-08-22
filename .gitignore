@@ -1,0 +1,8 @@
+# vskills runtime goal state
+CONTEXT/goals/*/backlog.jsonl
+CONTEXT/goals/*/lock.d/
+CONTEXT/worktrees/
+CONTEXT/goals/*/*.log
+CONTEXT/worktrees/**/*.log
+CONTEXT/worktrees/**/results.json
+CONTEXT/worktrees/**/*.digest.json
