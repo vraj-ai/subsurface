@@ -10,6 +10,7 @@ use subsurface_engine::evidence::LineRange;
 use subsurface_engine::excavate::{excavate, Finding};
 use subsurface_engine::mcp::{McpServer, McpStatus};
 use subsurface_engine::provider::{FakeProvider, KeychainStore, OpenAICompatibleProvider, Provider, PRESET_OPENAI};
+use subsurface_engine::report::{estimate_site_report_cost, generate_site_report, SiteReport, SiteReportEstimate};
 use subsurface_engine::site::{RecentSitesStore, Site};
 use subsurface_engine::staleness::{detect_staleness, StalenessStatus};
 use subsurface_engine::store::{FieldNote, SqliteStore};
@@ -132,14 +133,12 @@ fn excavate_range(
         end: end_line,
     };
 
-    // Check cached finding in SQLite
     if let Some(ref head_sha) = site.head_commit {
         if let Ok(Some(cached)) = state.store.get_cached_finding(&site.root_path, &file_path, range, head_sha) {
             return Ok(cached);
         }
     }
 
-    // Build provider
     let settings = state.settings.lock().unwrap().clone();
     let key = KeychainStore::get_key("subsurface_api_key").unwrap_or_default().unwrap_or_default();
     let provider: Arc<dyn Provider> = if !key.is_empty() {
@@ -188,6 +187,30 @@ fn delete_field_note(id: String, state: State<'_, AppState>) -> Result<bool, Str
 #[tauri::command]
 fn get_mcp_status(state: State<'_, AppState>) -> Result<McpStatus, String> {
     Ok(state.mcp.status())
+}
+
+#[tauri::command]
+fn generate_report(
+    site_path: String,
+    filter_prefix: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<SiteReport, String> {
+    let site = Site::open(PathBuf::from(&site_path)).map_err(|e| e.to_string())?;
+    let settings = state.settings.lock().unwrap().clone();
+    let key = KeychainStore::get_key("subsurface_api_key").unwrap_or_default().unwrap_or_default();
+    let provider: Arc<dyn Provider> = if !key.is_empty() {
+        Arc::new(OpenAICompatibleProvider::new(&settings.base_url, &key, &settings.model))
+    } else {
+        Arc::new(FakeProvider::new("Site report archaeology pass"))
+    };
+
+    generate_site_report(&site, filter_prefix.as_deref(), provider).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn estimate_report(site_path: String, filter_prefix: Option<String>) -> Result<SiteReportEstimate, String> {
+    let site = Site::open(PathBuf::from(&site_path)).map_err(|e| e.to_string())?;
+    Ok(estimate_site_report_cost(&site, filter_prefix.as_deref()))
 }
 
 #[tauri::command]
@@ -241,6 +264,8 @@ fn main() {
             list_field_notes,
             delete_field_note,
             get_mcp_status,
+            generate_report,
+            estimate_report,
             save_provider_settings,
         ])
         .run(tauri::generate_context!())

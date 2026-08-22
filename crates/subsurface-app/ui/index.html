@@ -122,7 +122,7 @@
 
     .container {
       display: grid;
-      grid-template-columns: 240px 1fr 380px;
+      grid-template-columns: 240px 1fr 400px;
       flex: 1;
       height: calc(100vh - 45px);
       overflow: hidden;
@@ -356,7 +356,7 @@
       background: var(--bg-panel);
       border: 1px solid var(--border-color);
       border-radius: 8px;
-      width: 600px;
+      width: 640px;
       max-height: 80vh;
       display: flex;
       flex-direction: column;
@@ -390,6 +390,28 @@
       justify-content: flex-end;
       gap: 8px;
     }
+
+    .tab-group {
+      display: flex;
+      gap: 4px;
+      margin-bottom: 8px;
+    }
+
+    .tab-btn {
+      padding: 4px 8px;
+      font-size: 11px;
+      background: #1c202a;
+      border: 1px solid var(--border-color);
+      border-radius: 4px;
+      color: var(--text-secondary);
+      cursor: pointer;
+    }
+
+    .tab-btn.active {
+      background: var(--bg-card);
+      color: var(--text-primary);
+      border-color: var(--accent-blue);
+    }
   </style>
 </head>
 <body>
@@ -401,9 +423,10 @@
     <div class="header-center">
       <input type="text" id="sitePathInput" placeholder="Site path (e.g. /Users/.../repo)" style="flex: 1;" />
       <button onclick="openSiteFromInput()">Open Site</button>
+      <button onclick="openSiteReportModal()">Site Report</button>
     </div>
     <div>
-      <span id="mcpIndicator" style="font-size: 11px; color: #3fb950;">● MCP In-Process</span>
+      <span id="mcpIndicator" style="font-size: 11px; color: #3fb950;">● MCP Active</span>
     </div>
   </header>
 
@@ -456,12 +479,30 @@
     <div class="modal-content">
       <div class="modal-header">
         <span>Exact Provider Payload Preview (Invariant)</span>
-        <button onclick="closeModal()">✕</button>
+        <button onclick="closeModal('payloadModal')">✕</button>
       </div>
       <div class="modal-body" id="payloadText"></div>
       <div class="modal-footer">
-        <button onclick="closeModal()">Close</button>
-        <button class="primary" onclick="closeModal(); runExcavate();">Send & Excavate</button>
+        <button onclick="closeModal('payloadModal')">Close</button>
+        <button class="primary" onclick="closeModal('payloadModal'); runExcavate();">Send & Excavate</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Site Report Modal -->
+  <div class="modal" id="reportModal">
+    <div class="modal-content" style="width: 760px;">
+      <div class="modal-header">
+        <span>Site Report (Read-Only)</span>
+        <button onclick="closeModal('reportModal')">✕</button>
+      </div>
+      <div class="modal-body" id="reportText">
+        <div id="reportSummary" style="margin-bottom: 12px;"></div>
+        <div id="reportList"></div>
+      </div>
+      <div class="modal-footer">
+        <button onclick="closeModal('reportModal')">Close</button>
+        <button class="primary" id="runReportBtn" onclick="runSiteReport()">Run Site Report</button>
       </div>
     </div>
   </div>
@@ -616,8 +657,8 @@
       }
     }
 
-    function closeModal() {
-      document.getElementById("payloadModal").classList.remove("active");
+    function closeModal(id) {
+      document.getElementById(id).classList.remove("active");
     }
 
     async function runExcavate() {
@@ -726,6 +767,66 @@
       `;
 
       container.innerHTML = html;
+    }
+
+    async function openSiteReportModal() {
+      if (!currentSite) {
+        alert("Please open a Site first.");
+        return;
+      }
+      document.getElementById("reportModal").classList.add("active");
+      try {
+        const estimate = await invokeBackend("estimate_report", {
+          sitePath: currentSite.root_path,
+          filterPrefix: null
+        });
+        document.getElementById("reportSummary").innerHTML = `
+          <div><strong>Files to scan:</strong> ${estimate.file_count}</div>
+          <div><strong>Estimated duration:</strong> ~${Math.round(estimate.estimated_duration_secs)} seconds</div>
+        `;
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    async function runSiteReport() {
+      const btn = document.getElementById("runReportBtn");
+      btn.disabled = true;
+      btn.innerText = "Scanning Site...";
+      try {
+        const report = await invokeBackend("generate_report", {
+          sitePath: currentSite.root_path,
+          filterPrefix: null
+        });
+        let listHtml = `<div style="margin-top: 12px;"><strong>Site Report (${report.entries.length} findings across ${report.total_files_scanned} files):</strong></div>`;
+        report.entries.forEach(e => {
+          listHtml += `
+            <div class="card" style="margin-top: 8px; cursor: pointer;" onclick="loadAndExcavate('${e.file_path}', ${e.line_range.start}, ${e.line_range.end})">
+              <div style="font-weight: 600; color: var(--accent-blue);">${escapeHtml(e.file_path)}:${e.line_range.start}-${e.line_range.end}</div>
+              <div style="font-size: 11px; color: var(--text-secondary);">${escapeHtml(e.description)}</div>
+            </div>
+          `;
+        });
+        document.getElementById("reportList").innerHTML = listHtml;
+      } catch (err) {
+        alert("Report generation failed: " + err);
+      } finally {
+        btn.disabled = false;
+        btn.innerText = "Run Site Report";
+      }
+    }
+
+    async function loadAndExcavate(filePath, start, end) {
+      closeModal('reportModal');
+      await loadFile(filePath);
+      selectedStartLine = start;
+      selectedEndLine = end;
+      updateSelectionUI();
+      document.querySelectorAll(".code-row").forEach(row => {
+        const num = parseInt(row.dataset.line);
+        row.classList.toggle("selected", num >= start && num <= end);
+      });
+      await runExcavate();
     }
 
     async function saveNote() {
