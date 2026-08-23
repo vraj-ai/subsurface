@@ -13,6 +13,7 @@ use subsurface_engine::provider::{
     FakeProvider, KeychainStore, OpenAICompatibleProvider, Provider, ALL_PRESETS,
     PRESET_OPENAI,
 };
+use subsurface_engine::project::Project;
 use subsurface_engine::report::{estimate_site_report_cost, generate_site_report, SiteReport, SiteReportEstimate};
 use subsurface_engine::site::{RecentSitesStore, Site};
 use subsurface_engine::staleness::{detect_staleness, StalenessStatus};
@@ -56,17 +57,26 @@ fn get_db_path() -> PathBuf {
 }
 
 #[tauri::command]
+fn open_project(path: String, state: State<'_, AppState>) -> Result<Project, String> {
+    open_project_inner(&path, &state)
+}
+
+#[tauri::command]
 fn open_site(path: String, state: State<'_, AppState>) -> Result<Site, String> {
-    let p = PathBuf::from(&path);
-    let site = Site::open(&p).map_err(|e| e.to_string())?;
+    open_project_inner(&path, &state)
+}
+
+fn open_project_inner(path: &str, state: &AppState) -> Result<Project, String> {
+    let p = PathBuf::from(path);
+    let project = Project::open(&p).map_err(|e| e.to_string())?;
 
     let mut recents = state.recent_sites.lock().unwrap();
-    recents.add(site.root_path.clone());
+    recents.add(project.root_path.clone());
 
     let name = p.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| "repo".to_string());
-    let _ = state.store.record_site_opened(&site.root_path, &name);
+    let _ = state.store.record_site_opened(&project.root_path, &name);
 
-    Ok(site)
+    Ok(project)
 }
 
 #[tauri::command]
@@ -290,7 +300,24 @@ fn generate_report(
     filter_prefix: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<SiteReport, String> {
-    let site = Site::open(PathBuf::from(&site_path)).map_err(|e| e.to_string())?;
+    assess_project_inner(&site_path, filter_prefix.as_deref(), &state)
+}
+
+#[tauri::command]
+fn assess_project(
+    project_path: String,
+    filter_prefix: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<SiteReport, String> {
+    assess_project_inner(&project_path, filter_prefix.as_deref(), &state)
+}
+
+fn assess_project_inner(
+    project_path: &str,
+    filter_prefix: Option<&str>,
+    state: &AppState,
+) -> Result<SiteReport, String> {
+    let project = Project::open(PathBuf::from(project_path)).map_err(|e| e.to_string())?;
     let settings = state.settings.lock().unwrap().clone();
     let key = KeychainStore::get_key("subsurface_api_key").unwrap_or_default().unwrap_or_default();
     let provider: Arc<dyn Provider> = if settings.offline_mode {
@@ -301,7 +328,7 @@ fn generate_report(
         Arc::new(FakeProvider::new("Site report archaeology pass"))
     };
 
-    generate_site_report(&site, filter_prefix.as_deref(), provider).map_err(|e| e.to_string())
+    generate_site_report(&project, filter_prefix, provider).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -394,6 +421,7 @@ fn main() {
     tauri::Builder::default()
         .manage(app_state)
         .invoke_handler(tauri::generate_handler![
+            open_project,
             open_site,
             get_home_workspace,
             toggle_pin_site,
@@ -407,6 +435,7 @@ fn main() {
             list_field_notes,
             delete_field_note,
             get_mcp_status,
+            assess_project,
             generate_report,
             estimate_report,
             get_provider_settings,
