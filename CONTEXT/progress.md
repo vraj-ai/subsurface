@@ -1,5 +1,8 @@
 # Progress
 
-- Current milestone: All milestones completed (M1–M5 + App Surface Polish).
-- Last verified milestone: M5 Site Report and OAuth (#10, #17) & UI Polish (`efbf04e`).
-- Verification: `cargo test --workspace` passed all 27 tests across M1–M5 (Foundation, Evidence Engine, First Finding with no-rationale invariant, Product Surface with 3-pane UI/MCP, Site Report matching direct excavate, and OAuth token refresh). App runs with global Tauri v2 IPC and Provider Settings modal.
+- Current milestone: All milestones completed (M1–M5 + Issues #18, #19, #20).
+- Last verified milestone:
+  - Issue #18: UI Provider Settings modal with Keychain storage, presets, and model suggestions (`efbf04e`).
+  - Issue #19: Site Report UX with receipt alert banners, category dashboard, and directory filtering (`429e572`).
+  - Issue #20: Home Workspace dashboard landing view with repository discovery and pinning (`bd77420`).
+- Verification: `cargo test --workspace` passed all 29 tests across engine, evidence engine, confidence rules, staleness receipts, MCP, Site Report, OAuth, and Workspace Auto-Discovery.
