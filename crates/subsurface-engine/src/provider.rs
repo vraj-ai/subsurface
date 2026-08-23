@@ -1,5 +1,5 @@
 use std::process::Command;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
@@ -17,6 +17,86 @@ pub enum ProviderError {
 /// The single trait for inference providers.
 pub trait Provider: Send + Sync {
     fn complete(&self, prompt: &str) -> Result<String, ProviderError>;
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ProviderKind {
+    OpenAi,
+    Xai,
+    OpenRouter,
+    OpenCodeFree,
+    OpenCodeZen,
+    OpenCodeGo,
+    Ollama,
+    Custom,
+}
+
+impl ProviderKind {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::OpenAi => "open_ai",
+            Self::Xai => "xai",
+            Self::OpenRouter => "open_router",
+            Self::OpenCodeFree => "open_code_free",
+            Self::OpenCodeZen => "open_code_zen",
+            Self::OpenCodeGo => "open_code_go",
+            Self::Ollama => "ollama",
+            Self::Custom => "custom",
+        }
+    }
+
+    pub(crate) fn parse(value: &str) -> Option<Self> {
+        match value {
+            "open_ai" => Some(Self::OpenAi),
+            "xai" => Some(Self::Xai),
+            "open_router" => Some(Self::OpenRouter),
+            "open_code_free" => Some(Self::OpenCodeFree),
+            "open_code_zen" => Some(Self::OpenCodeZen),
+            "open_code_go" => Some(Self::OpenCodeGo),
+            "ollama" => Some(Self::Ollama),
+            "custom" => Some(Self::Custom),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ProviderProtocol {
+    ChatCompletions,
+    Responses,
+    Messages,
+}
+
+impl ProviderProtocol {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::ChatCompletions => "chat_completions",
+            Self::Responses => "responses",
+            Self::Messages => "messages",
+        }
+    }
+
+    pub(crate) fn parse(value: &str) -> Option<Self> {
+        match value {
+            "chat_completions" => Some(Self::ChatCompletions),
+            "responses" => Some(Self::Responses),
+            "messages" => Some(Self::Messages),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ProviderConnectionPreferences {
+    pub id: String,
+    pub name: String,
+    pub provider: ProviderKind,
+    pub base_url: String,
+    pub model: String,
+    pub protocol: ProviderProtocol,
+    pub is_local: bool,
 }
 
 /// A deterministic, offline test fake that returns a canned response.
@@ -93,6 +173,25 @@ pub const ALL_PRESETS: &[ProviderPreset] = &[
 pub struct KeychainStore;
 
 impl KeychainStore {
+    pub fn connection_key_service(connection_id: &str) -> Result<String, String> {
+        if connection_id.trim().is_empty() {
+            return Err("Provider connection id cannot be empty".into());
+        }
+        Ok(format!("subsurface.provider.{connection_id}"))
+    }
+
+    pub fn save_connection_key(connection_id: &str, key: &str) -> Result<(), String> {
+        Self::save_key(&Self::connection_key_service(connection_id)?, key)
+    }
+
+    pub fn get_connection_key(connection_id: &str) -> Result<Option<String>, String> {
+        Self::get_key(&Self::connection_key_service(connection_id)?)
+    }
+
+    pub fn delete_connection_key(connection_id: &str) -> Result<(), String> {
+        Self::delete_key(&Self::connection_key_service(connection_id)?)
+    }
+
     pub fn save_key(service: &str, key: &str) -> Result<(), String> {
         let status = Command::new("security")
             .args([

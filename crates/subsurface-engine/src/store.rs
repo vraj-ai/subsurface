@@ -9,6 +9,7 @@ use uuid::Uuid;
 
 use crate::evidence::LineRange;
 use crate::excavate::Finding;
+use crate::provider::{ProviderConnectionPreferences, ProviderKind, ProviderProtocol};
 
 #[derive(Debug, Error)]
 pub enum StoreError {
@@ -22,6 +23,12 @@ pub enum StoreError {
     Lock,
     #[error("Unknown activity status: {0}")]
     InvalidActivityStatus(String),
+    #[error("Unknown provider kind: {0}")]
+    InvalidProviderKind(String),
+    #[error("Unknown provider protocol: {0}")]
+    InvalidProviderProtocol(String),
+    #[error("Provider connection id cannot be empty")]
+    InvalidProviderConnectionId,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -170,7 +177,18 @@ impl SqliteStore {
                 updated_at TEXT NOT NULL
             );
             CREATE INDEX IF NOT EXISTS idx_activities_project_updated
-                ON activities(project_path, updated_at DESC);",
+                ON activities(project_path, updated_at DESC);
+
+            CREATE TABLE IF NOT EXISTS provider_connections (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                provider TEXT NOT NULL,
+                base_url TEXT NOT NULL,
+                model TEXT NOT NULL,
+                protocol TEXT NOT NULL,
+                is_local INTEGER NOT NULL DEFAULT 0,
+                updated_at TEXT NOT NULL
+            );",
         )?;
         migrate_project_paths(&conn)?;
         Ok(())
@@ -341,6 +359,77 @@ impl SqliteStore {
                 detail,
                 created_at,
                 updated_at,
+            })
+        })
+        .collect()
+    }
+
+    pub fn save_provider_connection(
+        &self,
+        preferences: &ProviderConnectionPreferences,
+    ) -> Result<(), StoreError> {
+        if preferences.id.trim().is_empty() {
+            return Err(StoreError::InvalidProviderConnectionId);
+        }
+        let conn = self.conn.lock().map_err(|_| StoreError::Lock)?;
+        conn.execute(
+            "INSERT INTO provider_connections
+             (id, name, provider, base_url, model, protocol, is_local, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+             ON CONFLICT(id) DO UPDATE SET
+                 name = excluded.name,
+                 provider = excluded.provider,
+                 base_url = excluded.base_url,
+                 model = excluded.model,
+                 protocol = excluded.protocol,
+                 is_local = excluded.is_local,
+                 updated_at = excluded.updated_at",
+            params![
+                preferences.id,
+                preferences.name,
+                preferences.provider.as_str(),
+                preferences.base_url,
+                preferences.model,
+                preferences.protocol.as_str(),
+                preferences.is_local,
+                Utc::now().to_rfc3339(),
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn list_provider_connections(
+        &self,
+    ) -> Result<Vec<ProviderConnectionPreferences>, StoreError> {
+        let conn = self.conn.lock().map_err(|_| StoreError::Lock)?;
+        let mut stmt = conn.prepare(
+            "SELECT id, name, provider, base_url, model, protocol, is_local
+             FROM provider_connections ORDER BY name, id",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, String>(4)?,
+                row.get::<_, String>(5)?,
+                row.get::<_, bool>(6)?,
+            ))
+        })?;
+
+        rows.map(|row| {
+            let (id, name, provider, base_url, model, protocol, is_local) = row?;
+            Ok(ProviderConnectionPreferences {
+                id,
+                name,
+                provider: ProviderKind::parse(&provider)
+                    .ok_or(StoreError::InvalidProviderKind(provider))?,
+                base_url,
+                model,
+                protocol: ProviderProtocol::parse(&protocol)
+                    .ok_or(StoreError::InvalidProviderProtocol(protocol))?,
+                is_local,
             })
         })
         .collect()
