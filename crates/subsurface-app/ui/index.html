@@ -6,22 +6,20 @@
   <title>Subsurface — Git History Archaeology</title>
   <style>
     :root {
-      --bg-dark: #0f1117;
-      --bg-panel: #161922;
-      --bg-panel-header: #1e222d;
-      --bg-card: #202534;
-      --bg-card-hover: #272d3f;
-      --border-color: #2e3446;
-      --text-primary: #e6edf3;
+      --bg-dark: #0d1117;
+      --bg-panel: #161b22;
+      --bg-panel-header: #1f242c;
+      --bg-card: #21262d;
+      --bg-card-hover: #292e36;
+      --border-color: #30363d;
+      --text-primary: #f0f6fc;
       --text-secondary: #8b949e;
       --text-muted: #6e7681;
-      --accent-blue: #388bfd;
-      --accent-green: #238636;
+      --accent-blue: #58a6ff;
+      --accent-blue-btn: #1f6feb;
+      --accent-green: #2ea043;
       --accent-amber: #d29922;
-      --accent-red: #da3633;
-      --badge-stated: #238636;
-      --badge-inferred: #d29922;
-      --badge-none: #6e7681;
+      --accent-red: #f85149;
       --font-code: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
       --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     }
@@ -65,7 +63,7 @@
 
     .brand-tag {
       font-size: 10px;
-      background: #2e3446;
+      background: #30363d;
       color: var(--text-secondary);
       padding: 2px 6px;
       border-radius: 4px;
@@ -77,54 +75,58 @@
       align-items: center;
       gap: 8px;
       flex: 1;
-      max-width: 600px;
+      max-width: 650px;
     }
 
-    input[type="text"], input[type="number"] {
+    input[type="text"], input[type="password"], input[type="number"], select {
       background: var(--bg-dark);
       border: 1px solid var(--border-color);
       color: var(--text-primary);
-      padding: 5px 10px;
-      border-radius: 4px;
+      padding: 6px 10px;
+      border-radius: 6px;
       font-size: 12px;
       outline: none;
     }
 
-    input[type="text"]:focus {
+    input[type="text"]:focus, input[type="password"]:focus {
       border-color: var(--accent-blue);
     }
 
     button {
-      background: #2b313f;
+      background: #21262d;
       color: var(--text-primary);
       border: 1px solid var(--border-color);
-      padding: 5px 12px;
-      border-radius: 4px;
+      padding: 6px 14px;
+      border-radius: 6px;
       cursor: pointer;
       font-size: 12px;
       font-weight: 500;
-      transition: background 0.15s;
+      transition: all 0.15s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
     }
 
     button:hover {
-      background: #363d4e;
+      background: #30363d;
+      border-color: #8b949e;
     }
 
     button.primary {
-      background: var(--accent-blue);
-      border-color: var(--accent-blue);
+      background: var(--accent-blue-btn);
+      border-color: rgba(240, 246, 252, 0.1);
       color: #fff;
     }
 
     button.primary:hover {
-      background: #4b97fd;
+      background: #388bfd;
     }
 
     .container {
       display: grid;
-      grid-template-columns: 240px 1fr 400px;
+      grid-template-columns: 260px 1fr 420px;
       flex: 1;
-      height: calc(100vh - 45px);
+      height: calc(100vh - 49px);
       overflow: hidden;
     }
 
@@ -163,7 +165,7 @@
     }
 
     .file-item {
-      padding: 4px 8px;
+      padding: 5px 8px;
       border-radius: 4px;
       cursor: pointer;
       font-family: var(--font-code);
@@ -180,7 +182,7 @@
     }
 
     .file-item.active {
-      background: #242c3f;
+      background: #1f2b3e;
       color: var(--accent-blue);
       font-weight: 600;
     }
@@ -196,7 +198,7 @@
     }
 
     .code-toolbar {
-      padding: 6px 12px;
+      padding: 8px 12px;
       background: var(--bg-panel-header);
       border-bottom: 1px solid var(--border-color);
       display: flex;
@@ -221,15 +223,15 @@
     }
 
     .code-row:hover {
-      background: rgba(255, 255, 255, 0.03);
+      background: rgba(255, 255, 255, 0.04);
     }
 
     .code-row.selected {
-      background: rgba(56, 139, 253, 0.18);
+      background: rgba(56, 139, 253, 0.22);
     }
 
     .line-number {
-      width: 45px;
+      width: 48px;
       text-align: right;
       padding-right: 12px;
       color: var(--text-muted);
@@ -245,7 +247,7 @@
     /* Archaeology Pane */
     .archaeology-panel {
       border-right: none;
-      background: #141720;
+      background: #12161d;
     }
 
     .badge {
@@ -259,19 +261,19 @@
     }
 
     .badge-stated {
-      background: rgba(35, 134, 54, 0.2);
+      background: rgba(46, 160, 67, 0.15);
       color: #3fb950;
-      border: 1px solid #238636;
+      border: 1px solid #2ea043;
     }
 
     .badge-inferred {
-      background: rgba(210, 153, 34, 0.2);
+      background: rgba(210, 153, 34, 0.15);
       color: #e3b341;
       border: 1px solid #d29922;
     }
 
     .badge-none {
-      background: rgba(110, 118, 129, 0.2);
+      background: rgba(110, 118, 129, 0.15);
       color: #8b949e;
       border: 1px solid #6e7681;
     }
@@ -303,7 +305,7 @@
     }
 
     .timeline-item {
-      border-left: 2px solid #2e3446;
+      border-left: 2px solid #30363d;
       padding-left: 10px;
       margin-left: 4px;
       margin-bottom: 12px;
@@ -329,20 +331,17 @@
       font-size: 11px;
       padding: 6px 8px;
       white-space: pre-wrap;
-      max-height: 120px;
+      max-height: 140px;
       overflow-y: auto;
       margin-top: 4px;
       color: #8b949e;
     }
 
-    .diff-block .add { color: #3fb950; }
-    .diff-block .del { color: #f85149; }
-
     .modal {
       display: none;
       position: fixed;
       inset: 0;
-      background: rgba(0, 0, 0, 0.7);
+      background: rgba(0, 0, 0, 0.75);
       align-items: center;
       justify-content: center;
       z-index: 100;
@@ -356,8 +355,8 @@
       background: var(--bg-panel);
       border: 1px solid var(--border-color);
       border-radius: 8px;
-      width: 640px;
-      max-height: 80vh;
+      width: 680px;
+      max-height: 85vh;
       display: flex;
       flex-direction: column;
       overflow: hidden;
@@ -370,20 +369,18 @@
       border-bottom: 1px solid var(--border-color);
       display: flex;
       justify-content: space-between;
+      align-items: center;
     }
 
     .modal-body {
       padding: 16px;
       overflow-y: auto;
-      font-family: var(--font-code);
-      font-size: 12px;
-      white-space: pre-wrap;
       line-height: 1.4;
       color: #c9d1d9;
     }
 
     .modal-footer {
-      padding: 10px 16px;
+      padding: 12px 16px;
       background: var(--bg-panel-header);
       border-top: 1px solid var(--border-color);
       display: flex;
@@ -391,26 +388,38 @@
       gap: 8px;
     }
 
-    .tab-group {
-      display: flex;
-      gap: 4px;
-      margin-bottom: 8px;
-    }
-
-    .tab-btn {
-      padding: 4px 8px;
-      font-size: 11px;
-      background: #1c202a;
+    .preset-pill {
+      padding: 4px 10px;
+      border-radius: 14px;
+      background: var(--bg-dark);
       border: 1px solid var(--border-color);
-      border-radius: 4px;
-      color: var(--text-secondary);
+      font-size: 11px;
       cursor: pointer;
+      color: var(--text-secondary);
     }
 
-    .tab-btn.active {
-      background: var(--bg-card);
-      color: var(--text-primary);
+    .preset-pill.active {
+      background: #1f2b3e;
+      color: var(--accent-blue);
       border-color: var(--accent-blue);
+      font-weight: 600;
+    }
+
+    .chip {
+      padding: 2px 8px;
+      border-radius: 4px;
+      background: #21262d;
+      border: 1px solid var(--border-color);
+      font-size: 11px;
+      cursor: pointer;
+      margin-right: 4px;
+      margin-top: 4px;
+      display: inline-block;
+    }
+
+    .chip:hover {
+      border-color: var(--accent-blue);
+      color: var(--text-primary);
     }
   </style>
 </head>
@@ -421,17 +430,18 @@
       <span class="brand-tag">v1.0</span>
     </div>
     <div class="header-center">
-      <input type="text" id="sitePathInput" placeholder="Site path (e.g. /Users/.../repo)" style="flex: 1;" />
-      <button onclick="openSiteFromInput()">Open Site</button>
+      <input type="text" id="sitePathInput" placeholder="Site path (e.g. /Users/.../subsurface)" style="flex: 1;" value="" />
+      <button class="primary" onclick="openSiteFromInput()">Open Site</button>
       <button onclick="openSiteReportModal()">Site Report</button>
     </div>
-    <div>
+    <div style="display: flex; align-items: center; gap: 10px;">
       <span id="mcpIndicator" style="font-size: 11px; color: #3fb950;">● MCP Active</span>
+      <button onclick="openSettingsModal()">⚙️ Settings</button>
     </div>
   </header>
 
   <div class="container">
-    <!-- Panel 1: Repository -->
+    <!-- Panel 1: Repository Files -->
     <div class="panel">
       <div class="panel-header">
         <span>Files</span>
@@ -439,8 +449,9 @@
       </div>
       <div class="panel-body">
         <input type="text" id="fileFilter" placeholder="Filter files..." style="width: 100%; margin-bottom: 8px;" oninput="filterFiles()" />
+        <div id="siteMeta" style="font-size: 11px; color: var(--text-muted); margin-bottom: 8px;"></div>
         <ul class="file-tree" id="fileList">
-          <li style="color: var(--text-muted); padding: 8px;">No Site opened.</li>
+          <li style="color: var(--text-muted); padding: 8px;">No Site opened. Enter a repository path above and click Open Site.</li>
         </ul>
       </div>
     </div>
@@ -456,7 +467,9 @@
         </div>
       </div>
       <div class="code-content" id="codeContainer">
-        <div style="padding: 24px; color: var(--text-muted); text-align: center;">Select a file to inspect code and select a region to Excavate.</div>
+        <div style="padding: 32px; color: var(--text-muted); text-align: center;">
+          Select a file from the repository to inspect code, then select lines to Excavate.
+        </div>
       </div>
     </div>
 
@@ -467,9 +480,72 @@
         <span id="confidenceBadge" class="badge badge-none">No Selection</span>
       </div>
       <div class="panel-body" id="archaeologyBody">
-        <div style="color: var(--text-muted); text-align: center; margin-top: 40px;">
+        <div style="color: var(--text-muted); text-align: center; margin-top: 40px; line-height: 1.6;">
           Select a line range in the code viewer and press <strong>Excavate</strong> to uncover why it exists.
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Settings & Providers Modal -->
+  <div class="modal" id="settingsModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <span>Provider Settings & Auth (OS Keychain)</span>
+        <button onclick="closeModal('settingsModal')">✕</button>
+      </div>
+      <div class="modal-body">
+        <div style="margin-bottom: 14px;">
+          <label style="font-size: 11px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase;">Provider Presets</label>
+          <div style="display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap;" id="presetList">
+            <span class="preset-pill active" onclick="selectPreset('OpenAI')">OpenAI</span>
+            <span class="preset-pill" onclick="selectPreset('Grok')">Grok</span>
+            <span class="preset-pill" onclick="selectPreset('OpenRouter')">OpenRouter</span>
+            <span class="preset-pill" onclick="selectPreset('OpenCode Zen')">OpenCode Zen</span>
+            <span class="preset-pill" onclick="selectPreset('Ollama (Local)')">Ollama</span>
+            <span class="preset-pill" onclick="selectPreset('Custom')">Custom</span>
+          </div>
+        </div>
+
+        <div style="margin-bottom: 12px;">
+          <label style="font-size: 11px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 4px;">Base URL</label>
+          <input type="text" id="settingBaseUrl" style="width: 100%;" value="https://api.openai.com/v1" />
+        </div>
+
+        <div style="margin-bottom: 12px;">
+          <label style="font-size: 11px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 4px;">
+            API Key (Stored securely in macOS Keychain)
+          </label>
+          <input type="password" id="settingApiKey" placeholder="Paste API Key (never written in plaintext)" style="width: 100%;" />
+          <div id="keyStatus" style="font-size: 11px; color: var(--accent-green); margin-top: 4px;"></div>
+        </div>
+
+        <div style="margin-bottom: 12px;">
+          <label style="font-size: 11px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 4px;">
+            Model Name (Text field with suggestions — ADR 0005)
+          </label>
+          <input type="text" id="settingModel" style="width: 100%; margin-bottom: 4px;" value="gpt-4o" />
+          <div id="modelSuggestions" style="margin-top: 4px;"></div>
+        </div>
+
+        <div style="margin-bottom: 12px; padding: 10px; background: var(--bg-dark); border-radius: 6px;">
+          <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+            <input type="checkbox" id="settingOfflineMode" />
+            <span style="font-weight: 600; font-size: 12px;">Zero-Network / Offline Mode</span>
+          </label>
+          <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">
+            Guarantees no outbound network calls leave your machine. Pure local git archaeology only.
+          </div>
+        </div>
+
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 14px;">
+          <button onclick="testConnection()">Test Connection</button>
+          <span id="testConnectionResult" style="font-size: 11px;"></span>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button onclick="closeModal('settingsModal')">Cancel</button>
+        <button class="primary" onclick="saveSettings()">Save Settings</button>
       </div>
     </div>
   </div>
@@ -481,7 +557,9 @@
         <span>Exact Provider Payload Preview (Invariant)</span>
         <button onclick="closeModal('payloadModal')">✕</button>
       </div>
-      <div class="modal-body" id="payloadText"></div>
+      <div class="modal-body">
+        <pre id="payloadText" style="font-family: var(--font-code); font-size: 11px; white-space: pre-wrap; color: #c9d1d9;"></pre>
+      </div>
       <div class="modal-footer">
         <button onclick="closeModal('payloadModal')">Close</button>
         <button class="primary" onclick="closeModal('payloadModal'); runExcavate();">Send & Excavate</button>
@@ -493,12 +571,12 @@
   <div class="modal" id="reportModal">
     <div class="modal-content" style="width: 760px;">
       <div class="modal-header">
-        <span>Site Report (Read-Only)</span>
+        <span>Site Report (Read-Only Repo-wide Archaeology)</span>
         <button onclick="closeModal('reportModal')">✕</button>
       </div>
-      <div class="modal-body" id="reportText">
-        <div id="reportSummary" style="margin-bottom: 12px;"></div>
-        <div id="reportList"></div>
+      <div class="modal-body">
+        <div id="reportSummary" style="margin-bottom: 12px; font-size: 12px;"></div>
+        <div id="reportList" style="max-height: 55vh; overflow-y: auto;"></div>
       </div>
       <div class="modal-footer">
         <button onclick="closeModal('reportModal')">Close</button>
@@ -514,14 +592,57 @@
     let selectedStartLine = null;
     let selectedEndLine = null;
     let currentFinding = null;
+    let providerPresets = [];
 
+    // Robust Tauri IPC invocation helper
     async function invokeBackend(cmd, args = {}) {
-      if (window.__TAURI__ && window.__TAURI__.core) {
-        return await window.__TAURI__.core.invoke(cmd, args);
+      try {
+        if (window.__TAURI__ && window.__TAURI__.core && typeof window.__TAURI__.core.invoke === 'function') {
+          return await window.__TAURI__.core.invoke(cmd, args);
+        }
+        if (window.__TAURI__ && typeof window.__TAURI__.invoke === 'function') {
+          return await window.__TAURI__.invoke(cmd, args);
+        }
+        if (window.__TAURI_INTERNALS__ && typeof window.__TAURI_INTERNALS__.invoke === 'function') {
+          return await window.__TAURI_INTERNALS__.invoke(cmd, args);
+        }
+      } catch (err) {
+        console.error(`Tauri invoke error [${cmd}]:`, err);
+        throw err;
       }
-      console.log(`[mock-invoke] ${cmd}`, args);
-      return null;
+      console.warn(`Tauri runtime not injected for command: ${cmd}`, args);
+      throw new Error("Tauri IPC bridge not ready. Please make sure the app was launched via Tauri.");
     }
+
+    window.addEventListener("DOMContentLoaded", async () => {
+      // Set default path if empty
+      const input = document.getElementById("sitePathInput");
+      if (!input.value) {
+        input.value = "/Users/vraj/Work/Projects/subsurface";
+      }
+
+      // Load settings
+      try {
+        const settings = await invokeBackend("get_provider_settings");
+        if (settings) {
+          providerPresets = settings.presets || [];
+          document.getElementById("settingBaseUrl").value = settings.base_url || "";
+          document.getElementById("settingModel").value = settings.model || "";
+          document.getElementById("settingOfflineMode").checked = !!settings.offline_mode;
+          if (settings.has_key) {
+            document.getElementById("keyStatus").innerText = "✓ API Key configured in macOS Keychain";
+          }
+          renderPresets();
+        }
+      } catch (e) {
+        console.log("Settings init error:", e);
+      }
+
+      // Try auto-opening initial site
+      if (input.value) {
+        openSiteFromInput();
+      }
+    });
 
     async function openSiteFromInput() {
       const input = document.getElementById("sitePathInput").value.trim();
@@ -530,7 +651,14 @@
         const site = await invokeBackend("open_site", { path: input });
         if (site) {
           currentSite = site;
+          document.getElementById("siteMeta").innerHTML = `
+            <div><strong>HEAD:</strong> ${site.head_commit ? site.head_commit.substring(0, 7) : 'None'} · ${site.total_commits_estimate} commits</div>
+            <div>${site.is_shallow ? '⚠️ Shallow clone' : 'Full history'} · ${site.has_remote ? 'Remote configured' : 'Local repo'}</div>
+          `;
           renderFileList(site.tracked_files);
+          if (site.tracked_files.length > 0) {
+            loadFile(site.tracked_files[0]);
+          }
         }
       } catch (err) {
         alert("Failed to open site: " + err);
@@ -543,7 +671,7 @@
       list.innerHTML = "";
       files.forEach(f => {
         const li = document.createElement("li");
-        li.className = "file-item";
+        li.className = "file-item" + (f === currentFile ? " active" : "");
         li.innerText = f;
         li.onclick = () => loadFile(f);
         list.appendChild(li);
@@ -657,10 +785,6 @@
       }
     }
 
-    function closeModal(id) {
-      document.getElementById(id).classList.remove("active");
-    }
-
     async function runExcavate() {
       if (!currentSite || !currentFile || selectedStartLine === null) {
         alert("Please select a file and line range first.");
@@ -669,8 +793,9 @@
       const start = Math.min(selectedStartLine, selectedEndLine);
       const end = Math.max(selectedStartLine, selectedEndLine);
 
-      document.getElementById("excavateBtn").disabled = true;
-      document.getElementById("excavateBtn").innerText = "Digging...";
+      const btn = document.getElementById("excavateBtn");
+      btn.disabled = true;
+      btn.innerText = "Digging...";
 
       try {
         const finding = await invokeBackend("excavate_range", {
@@ -684,8 +809,8 @@
       } catch (err) {
         alert("Excavate failed: " + err);
       } finally {
-        document.getElementById("excavateBtn").disabled = false;
-        document.getElementById("excavateBtn").innerText = "Excavate";
+        btn.disabled = false;
+        btn.innerText = "Excavate";
       }
     }
 
@@ -747,7 +872,7 @@
         html += `</div>`;
       }
 
-      if (f.budget_summary.excluded.length > 0) {
+      if (f.budget_summary && f.budget_summary.excluded && f.budget_summary.excluded.length > 0) {
         html += `
           <div class="card">
             <div class="card-title">Evidence Budget (${f.budget_summary.total_considered} considered, ${f.budget_summary.excluded.length} excluded)</div>
@@ -767,6 +892,90 @@
       `;
 
       container.innerHTML = html;
+    }
+
+    function renderPresets() {
+      const container = document.getElementById("presetList");
+      container.innerHTML = "";
+      providerPresets.forEach((p, i) => {
+        const span = document.createElement("span");
+        span.className = "preset-pill" + (i === 0 ? " active" : "");
+        span.innerText = p.name;
+        span.onclick = () => {
+          document.querySelectorAll(".preset-pill").forEach(el => el.classList.remove("active"));
+          span.classList.add("active");
+          document.getElementById("settingBaseUrl").value = p.default_base_url;
+          if (p.suggested_models && p.suggested_models.length > 0) {
+            document.getElementById("settingModel").value = p.suggested_models[0];
+            renderModelChips(p.suggested_models);
+          }
+        };
+        container.appendChild(span);
+      });
+      if (providerPresets.length > 0) {
+        renderModelChips(providerPresets[0].suggested_models);
+      }
+    }
+
+    function renderModelChips(models) {
+      const div = document.getElementById("modelSuggestions");
+      div.innerHTML = "";
+      models.forEach(m => {
+        const chip = document.createElement("span");
+        chip.className = "chip";
+        chip.innerText = m;
+        chip.onclick = () => {
+          document.getElementById("settingModel").value = m;
+        };
+        div.appendChild(chip);
+      });
+    }
+
+    function openSettingsModal() {
+      document.getElementById("settingsModal").classList.add("active");
+    }
+
+    async function saveSettings() {
+      const baseUrl = document.getElementById("settingBaseUrl").value.trim();
+      const model = document.getElementById("settingModel").value.trim();
+      const apiKey = document.getElementById("settingApiKey").value;
+      const offlineMode = document.getElementById("settingOfflineMode").checked;
+
+      try {
+        await invokeBackend("save_provider_settings", {
+          baseUrl,
+          model,
+          apiKey: apiKey || null,
+          offlineMode
+        });
+        alert("Settings saved successfully!");
+        closeModal("settingsModal");
+      } catch (err) {
+        alert("Failed to save settings: " + err);
+      }
+    }
+
+    async function testConnection() {
+      const resSpan = document.getElementById("testConnectionResult");
+      resSpan.innerText = "Pinging provider...";
+      resSpan.style.color = "var(--text-secondary)";
+
+      const baseUrl = document.getElementById("settingBaseUrl").value.trim();
+      const model = document.getElementById("settingModel").value.trim();
+      const apiKey = document.getElementById("settingApiKey").value;
+
+      try {
+        const res = await invokeBackend("test_provider_connection", {
+          baseUrl,
+          apiKey: apiKey || null,
+          model
+        });
+        resSpan.innerText = "✓ Connected successfully";
+        resSpan.style.color = "var(--accent-green)";
+      } catch (err) {
+        resSpan.innerText = "✗ Failed: " + err;
+        resSpan.style.color = "var(--accent-red)";
+      }
     }
 
     async function openSiteReportModal() {
@@ -798,11 +1007,19 @@
           sitePath: currentSite.root_path,
           filterPrefix: null
         });
-        let listHtml = `<div style="margin-top: 12px;"><strong>Site Report (${report.entries.length} findings across ${report.total_files_scanned} files):</strong></div>`;
+        let listHtml = `<div style="margin-top: 12px; font-weight: 600;">Findings across ${report.total_files_scanned} files (${report.entries.length} items):</div>`;
         report.entries.forEach(e => {
+          let badgeClass = "badge-none";
+          if (e.category === "DeadWorkaround") badgeClass = "badge-stated";
+          if (e.category === "NoRationale") badgeClass = "badge-none";
+          if (e.category === "UntestedCode") badgeClass = "badge-inferred";
+
           listHtml += `
             <div class="card" style="margin-top: 8px; cursor: pointer;" onclick="loadAndExcavate('${e.file_path}', ${e.line_range.start}, ${e.line_range.end})">
-              <div style="font-weight: 600; color: var(--accent-blue);">${escapeHtml(e.file_path)}:${e.line_range.start}-${e.line_range.end}</div>
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                <span style="font-weight: 600; color: var(--accent-blue);">${escapeHtml(e.file_path)}:${e.line_range.start}-${e.line_range.end}</span>
+                <span class="badge ${badgeClass}">${e.category}</span>
+              </div>
               <div style="font-size: 11px; color: var(--text-secondary);">${escapeHtml(e.description)}</div>
             </div>
           `;
@@ -842,6 +1059,10 @@
       } catch (err) {
         alert("Failed to save note: " + err);
       }
+    }
+
+    function closeModal(id) {
+      document.getElementById(id).classList.remove("active");
     }
 
     function escapeHtml(text) {

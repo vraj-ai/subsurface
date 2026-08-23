@@ -9,17 +9,29 @@ use tauri::State;
 use subsurface_engine::evidence::LineRange;
 use subsurface_engine::excavate::{excavate, Finding};
 use subsurface_engine::mcp::{McpServer, McpStatus};
-use subsurface_engine::provider::{FakeProvider, KeychainStore, OpenAICompatibleProvider, Provider, PRESET_OPENAI};
+use subsurface_engine::provider::{
+    FakeProvider, KeychainStore, OpenAICompatibleProvider, Provider, ALL_PRESETS,
+    PRESET_OPENAI,
+};
 use subsurface_engine::report::{estimate_site_report_cost, generate_site_report, SiteReport, SiteReportEstimate};
 use subsurface_engine::site::{RecentSitesStore, Site};
 use subsurface_engine::staleness::{detect_staleness, StalenessStatus};
 use subsurface_engine::store::{FieldNote, SqliteStore};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PresetInfo {
+    pub name: String,
+    pub default_base_url: String,
+    pub suggested_models: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProviderSettings {
     pub base_url: String,
     pub model: String,
     pub has_key: bool,
+    pub offline_mode: bool,
+    pub presets: Vec<PresetInfo>,
 }
 
 pub struct AppState {
@@ -141,10 +153,13 @@ fn excavate_range(
 
     let settings = state.settings.lock().unwrap().clone();
     let key = KeychainStore::get_key("subsurface_api_key").unwrap_or_default().unwrap_or_default();
-    let provider: Arc<dyn Provider> = if !key.is_empty() {
+    
+    let provider: Arc<dyn Provider> = if settings.offline_mode {
+        Arc::new(FakeProvider::new("Offline mode active: showing local git archaeology facts."))
+    } else if !key.is_empty() || settings.base_url.contains("localhost") || settings.base_url.contains("127.0.0.1") {
         Arc::new(OpenAICompatibleProvider::new(&settings.base_url, &key, &settings.model))
     } else {
-        Arc::new(FakeProvider::new("No provider key configured; showing git archaeology facts."))
+        Arc::new(FakeProvider::new("No provider key configured in settings; showing git archaeology facts."))
     };
 
     let finding = excavate(&site, &file_path, range, provider).map_err(|e| e.to_string())?;
@@ -198,7 +213,9 @@ fn generate_report(
     let site = Site::open(PathBuf::from(&site_path)).map_err(|e| e.to_string())?;
     let settings = state.settings.lock().unwrap().clone();
     let key = KeychainStore::get_key("subsurface_api_key").unwrap_or_default().unwrap_or_default();
-    let provider: Arc<dyn Provider> = if !key.is_empty() {
+    let provider: Arc<dyn Provider> = if settings.offline_mode {
+        Arc::new(FakeProvider::new("Site report offline pass"))
+    } else if !key.is_empty() || settings.base_url.contains("localhost") {
         Arc::new(OpenAICompatibleProvider::new(&settings.base_url, &key, &settings.model))
     } else {
         Arc::new(FakeProvider::new("Site report archaeology pass"))
@@ -214,22 +231,54 @@ fn estimate_report(site_path: String, filter_prefix: Option<String>) -> Result<S
 }
 
 #[tauri::command]
+fn get_provider_settings(state: State<'_, AppState>) -> Result<ProviderSettings, String> {
+    let mut settings = state.settings.lock().unwrap().clone();
+    settings.has_key = KeychainStore::get_key("subsurface_api_key").unwrap_or_default().is_some();
+    Ok(settings)
+}
+
+#[tauri::command]
 fn save_provider_settings(
     base_url: String,
     model: String,
     api_key: Option<String>,
+    offline_mode: bool,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
     if let Some(k) = api_key {
-        if !k.is_empty() {
-            KeychainStore::save_key("subsurface_api_key", &k)?;
+        let trimmed = k.trim();
+        if !trimmed.is_empty() {
+            KeychainStore::save_key("subsurface_api_key", trimmed)?;
         }
     }
     let mut settings = state.settings.lock().unwrap();
     settings.base_url = base_url;
     settings.model = model;
+    settings.offline_mode = offline_mode;
     settings.has_key = KeychainStore::get_key("subsurface_api_key").unwrap_or_default().is_some();
     Ok(())
+}
+
+#[tauri::command]
+fn test_provider_connection(
+    base_url: String,
+    api_key: Option<String>,
+    model: String,
+) -> Result<String, String> {
+    let key = if let Some(k) = api_key {
+        if !k.trim().is_empty() {
+            k
+        } else {
+            KeychainStore::get_key("subsurface_api_key").unwrap_or_default().unwrap_or_default()
+        }
+    } else {
+        KeychainStore::get_key("subsurface_api_key").unwrap_or_default().unwrap_or_default()
+    };
+
+    let provider = OpenAICompatibleProvider::new(base_url, key, model);
+    provider
+        .complete("Ping. Respond with 'OK'.")
+        .map_err(|e| e.to_string())
 }
 
 fn main() {
@@ -238,10 +287,21 @@ fn main() {
     let fake_provider = Arc::new(FakeProvider::new("Subsurface desktop engine"));
     let mcp = Arc::new(McpServer::new(store.clone(), fake_provider));
 
+    let presets = ALL_PRESETS
+        .iter()
+        .map(|p| PresetInfo {
+            name: p.name.to_string(),
+            default_base_url: p.default_base_url.to_string(),
+            suggested_models: p.suggested_models.iter().map(|s| s.to_string()).collect(),
+        })
+        .collect();
+
     let initial_settings = ProviderSettings {
         base_url: PRESET_OPENAI.default_base_url.to_string(),
         model: "gpt-4o".to_string(),
         has_key: KeychainStore::get_key("subsurface_api_key").unwrap_or_default().is_some(),
+        offline_mode: false,
+        presets,
     };
 
     let app_state = AppState {
@@ -266,7 +326,9 @@ fn main() {
             get_mcp_status,
             generate_report,
             estimate_report,
+            get_provider_settings,
             save_provider_settings,
+            test_provider_connection,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
