@@ -3,12 +3,14 @@ mod support;
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::net::TcpStream;
+use std::time::Duration;
 
-use support::LocalHttpFake;
 use subsurface_engine::provider::{
-    KeychainStore, ProviderConnectionPreferences, ProviderKind, ProviderProtocol,
+    KeychainStore, NativeProvider, Provider, ProviderConnectionPreferences, ProviderError,
+    ProviderKind, ProviderProtocol,
 };
 use subsurface_engine::store::SqliteStore;
+use support::{LocalHttpFake, StubResponse};
 
 #[test]
 fn local_http_fake_starts_and_stops() {
@@ -69,7 +71,9 @@ fn per_connection_keys_do_not_overwrite() {
     let database = temp.path().join("connections.db");
     let store = SqliteStore::open(&database).expect("store");
     store.save_provider_connection(&first).expect("save first");
-    store.save_provider_connection(&second).expect("save second");
+    store
+        .save_provider_connection(&second)
+        .expect("save second");
     let mut updated_first = first.clone();
     updated_first.model = "gpt-5.1".into();
     store
@@ -86,4 +90,113 @@ fn per_connection_keys_do_not_overwrite() {
     assert!(!persisted_json.contains("first-secret"));
     assert!(!persisted_json.contains("second-secret"));
     assert!(KeychainStore::connection_key_service("  ").is_err());
+}
+
+#[test]
+fn native_provider_supports_all_text_protocols() {
+    let cases = [
+        (
+            ProviderProtocol::ChatCompletions,
+            "/chat/completions",
+            r#"{"choices":[{"message":{"content":"chat answer"}}]}"#,
+            "chat answer",
+        ),
+        (
+            ProviderProtocol::Responses,
+            "/responses",
+            r#"{"output":[{"content":[{"type":"output_text","text":"responses answer"}]}]}"#,
+            "responses answer",
+        ),
+        (
+            ProviderProtocol::Messages,
+            "/messages",
+            r#"{"content":[{"type":"text","text":"messages answer"}]}"#,
+            "messages answer",
+        ),
+    ];
+
+    for (protocol, path, response, expected) in cases {
+        let server = LocalHttpFake::start_with(vec![StubResponse::json(200, response)]);
+        let provider =
+            NativeProvider::new(connection(server.address(), protocol), "connection-secret");
+
+        assert_eq!(
+            provider
+                .complete("Inspect this change")
+                .expect("completion"),
+            expected
+        );
+        let request = server.requests().pop().expect("captured request");
+        assert!(
+            request.starts_with(&format!("POST {path} HTTP/1.1\r\n")),
+            "unexpected request: {request:?}"
+        );
+        assert!(request
+            .to_ascii_lowercase()
+            .contains("authorization: bearer connection-secret\r\n"));
+        if protocol == ProviderProtocol::Messages {
+            assert!(request
+                .to_ascii_lowercase()
+                .contains("x-api-key: connection-secret\r\n"));
+            assert!(request.contains("anthropic-version: 2023-06-01\r\n"));
+        }
+        let payload: serde_json::Value =
+            serde_json::from_str(request.split_once("\r\n\r\n").expect("request body").1)
+                .expect("JSON payload");
+        assert_eq!(payload["model"], "contract-model");
+        match protocol {
+            ProviderProtocol::Responses => assert_eq!(payload["input"], "Inspect this change"),
+            ProviderProtocol::ChatCompletions | ProviderProtocol::Messages => {
+                assert_eq!(payload["messages"][0]["content"], "Inspect this change")
+            }
+        }
+    }
+}
+
+#[test]
+fn native_provider_distinguishes_failures() {
+    let server = LocalHttpFake::start_with(vec![
+        StubResponse::json(401, r#"{"error":"bad key"}"#),
+        StubResponse::json(429, r#"{"error":"slow down"}"#),
+        StubResponse::json(200, "not json"),
+        StubResponse::json(200, r#"{"choices":[{"message":{"content":"late"}}]}"#)
+            .delayed(Duration::from_millis(100)),
+    ]);
+    let provider = NativeProvider::new(
+        connection(server.address(), ProviderProtocol::ChatCompletions),
+        "key",
+    )
+    .with_timeout(Duration::from_millis(20));
+
+    assert!(matches!(
+        provider.complete("one"),
+        Err(ProviderError::Auth(_))
+    ));
+    assert!(matches!(
+        provider.complete("two"),
+        Err(ProviderError::RateLimit(_))
+    ));
+    assert!(matches!(
+        provider.complete("three"),
+        Err(ProviderError::MalformedResponse(_))
+    ));
+    assert!(matches!(
+        provider.complete("four"),
+        Err(ProviderError::Timeout(_))
+    ));
+}
+
+fn connection(
+    address: std::net::SocketAddr,
+    protocol: ProviderProtocol,
+) -> ProviderConnectionPreferences {
+    ProviderConnectionPreferences {
+        id: "contract".into(),
+        name: "Contract".into(),
+        provider: ProviderKind::OpenCodeGo,
+        base_url: format!("http://{address}"),
+        model: "contract-model".into(),
+        protocol,
+        is_local: true,
+    }
 }
