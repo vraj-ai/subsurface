@@ -54,6 +54,7 @@ pub struct LocalHttpFake {
 }
 
 impl LocalHttpFake {
+    #[allow(dead_code)]
     pub fn start() -> Self {
         Self::start_with(Vec::new())
     }
