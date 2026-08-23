@@ -6,7 +6,7 @@ Subsurface is a local-first desktop tool that answers one question about a
 selected region of code: **is this safe to change?** It reads the Evidence the
 repository already contains, turns verified problems into Opportunities, and
 can prepare and test a candidate in a disposable clone before publishing an
-approved Work Item. It improves codebases without applying changes to the Site.
+approved Work Item. It improves codebases without applying changes to the Project.
 
 ## Locked Decisions
 
@@ -15,32 +15,33 @@ approved Work Item. It improves codebases without applying changes to the Site.
   **Why** is asserted only when Evidence supports it. See `docs/adr/0001`.
 - Inference is cloud-first via a signed-in provider; Ollama is a switch. Index,
   blame, renames and Timelines never leave the machine. See `docs/adr/0002`.
-- Auth ships both paths in v1: pasted keys for any OpenAI-compatible endpoint
-  (presets for OpenAI, Grok, OpenRouter, OpenCode Zen) and OAuth where the
-  provider offers it. No curated model list. See `docs/adr/0005`.
+- Auth ships both paths in v1: pasted keys for native providers and compatible
+  endpoints (OpenAI, xAI, OpenRouter, OpenCode Zen/Go/Free, Ollama, and Custom)
+  plus OAuth where the provider offers it. OpenCode Go uses its API key, not
+  OAuth. No curated model list. See `docs/adr/0005`.
 - Agents reach Subsurface over MCP and share its Field Notes. See `docs/adr/0004`.
 - A selection is a line range, followed through history with `git log -L`.
   Symbol-level tracking is a later layer.
-- Opening a Site indexes only the cheap things — commit graph, paths, renames.
+- Opening a Project indexes only the cheap things — commit graph, paths, renames.
   Expensive walks happen per Excavate.
 - The shell is Tauri with a Rust backend. See `docs/adr/0003`.
-- The primary flow is open Site -> Site Report -> Opportunity -> Finding ->
+- The primary flow is open Project -> Assessment -> Opportunity -> Finding ->
   prepare -> verify -> Work Item. Direct Excavate remains available.
-- The Site Report is the primary improvement workspace. It grades only measured
+- The Project Assessment is the primary improvement workspace. It grades only measured
   quality, surfaces Opportunities, and drills into the same Findings produced
   by Excavate. See `docs/adr/0009`.
 - An Opportunity moves through Detected, Prepared, Verified or Failed, then
   Published or Dismissed. Preparation and tests run only in a disposable clone;
-  the Site is never modified. See `docs/adr/0009`.
+  the Project is never modified. See `docs/adr/0009`.
 - A Quality Grade is `A+` through `F`, or `Incomplete`. The overall grade is the
   lowest measured dimension. A model may add a provisional critique but never
   manufacture a missing metric. See `docs/adr/0010`.
 - Automatic Work Item publication is off by default and requires explicit
-  per-Site, per-category enablement plus a user-selected minimum Quality Grade.
+  per-Project, per-category enablement plus a user-selected minimum Quality Grade.
   `Incomplete` and model-only assessments are never eligible.
 - Related tests are found by co-commit; staleness is flagged only with a
   receipt. See `docs/adr/0006`.
-- Field Notes live in a per-machine SQLite database in app data, keyed by Site.
+- Field Notes live in a per-machine SQLite database in app data, keyed by Project.
   Nothing is written into the user's repository.
 - Evidence sources in v1 are git, tests, and docs. GitHub/GitLab PRs and issues
   are the next layer, not the first.
@@ -53,9 +54,9 @@ approved Work Item. It improves codebases without applying changes to the Site.
   never the model's self-rating. See `docs/adr/0007`.
 - Indexing, blame, rename-following and Timelines run locally regardless of
   which provider is configured.
-- Subsurface never writes into the user's repository.
+- Subsurface never writes into the user's active Project repository.
 - Generated candidates and repository commands run only in a disposable clone
-  under an explicit per-Site command allowlist.
+  under an explicit per-Project command allowlist.
 - Every Quality Grade deduction cites an Improvement Receipt; missing required
   measurements produce `Incomplete`.
 - Nothing is sent to a provider without the user seeing what it is.
@@ -65,7 +66,7 @@ approved Work Item. It improves codebases without applying changes to the Site.
 
 ## Non-goals
 
-- Subsurface never applies a candidate to the active Site and does not replace
+- Subsurface never applies a candidate to the active Project and does not replace
   an editor, git client, pull-request workflow, or documentation system.
 - A prepared candidate is a verified proposal attached to a Work Item, not a
   silent edit or an automatically merged change.
@@ -74,6 +75,9 @@ approved Work Item. It improves codebases without applying changes to the Site.
 
 - v1 ships on macOS only. Tauri makes the other platforms cheap later; each is
   its own signing and webview story.
+- `Project` is the canonical product and wire vocabulary. Legacy `Site` types,
+  commands, and `site_path` inputs remain only during the expand/contract
+  migration and must not appear in new responses or active UI copy.
 - The MCP server is in-process and runs only while the app is open. Agents get
   an explicit "not running" error rather than a headless daemon.
 - The co-commit test heuristic is sometimes wrong; it is surfaced as weaker
