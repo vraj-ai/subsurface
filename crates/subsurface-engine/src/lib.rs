@@ -5,6 +5,7 @@ pub mod excavate;
 pub mod fixture;
 pub mod mcp;
 pub mod oauth;
+pub mod project;
 pub mod provider;
 pub mod report;
 pub mod site;
