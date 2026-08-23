@@ -7,6 +7,12 @@ Keep durable decisions in `CONTEXT/architecture.md`, keep progress bounded, and
 use the project's tests, builds, git history, and goal artifacts as evidence.
 Do not turn `CONTEXT/progress.md` into a session diary.
 
+## Issue Tracker & GitHub Invariant
+
+- **Always maintain the GitHub Issue Tracker**: Every new feature, UI change, refactor, or bug fix requested by the user MUST be tracked with a GitHub issue on `vraj-ai/subsurface` using `gh issue create`.
+- **Always link verification**: Assign to `@me`, verify against automated tests, and close the issue upon pushing with the exact commit SHA (`gh issue close <N> --comment "Completed in <sha>"`).
+- Never implement features or fixes without maintaining the corresponding GitHub issue.
+
 ## Agent skills
 
 - **Issue tracker** — see `docs/agents/issue-tracker.md` (GitHub Issues on `vraj-ai/subsurface`).
