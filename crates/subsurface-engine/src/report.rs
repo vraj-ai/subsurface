@@ -10,7 +10,7 @@ use crate::evidence::LineRange;
 use crate::excavate::{excavate, Finding};
 use crate::provider::Provider;
 use crate::site::Site;
-use crate::staleness::{detect_staleness, StalenessStatus};
+use crate::staleness::StalenessStatus;
 
 #[derive(Debug, Error)]
 pub enum ReportError {
@@ -119,9 +119,7 @@ pub fn generate_site_report(
         let finding = excavate(site, file_path, range, provider.clone())
             .map_err(|e| ReportError::Excavate(e.to_string()))?;
 
-        let staleness = detect_staleness(site, &finding);
-
-        if let StalenessStatus::Stale { receipt } = staleness {
+        if let StalenessStatus::Stale { ref receipt } = finding.staleness {
             entries.push(SiteReportEntry {
                 file_path: file_path.to_string(),
                 line_range: range,

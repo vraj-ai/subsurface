@@ -10,7 +10,7 @@
       --bg-panel: #161b22;
       --bg-panel-header: #1f242c;
       --bg-card: #21262d;
-      --bg-card-hover: #292e36;
+      --bg-card-hover: #282e36;
       --border-color: #30363d;
       --text-primary: #f0f6fc;
       --text-secondary: #8b949e;
@@ -122,9 +122,27 @@
       background: #388bfd;
     }
 
+    .provider-pill {
+      background: #1f2b3e;
+      border: 1px solid rgba(56, 139, 253, 0.4);
+      color: var(--accent-blue);
+      padding: 4px 10px;
+      border-radius: 12px;
+      font-size: 11px;
+      font-weight: 500;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .provider-pill:hover {
+      background: #27374f;
+    }
+
     .container {
       display: grid;
-      grid-template-columns: 260px 1fr 420px;
+      grid-template-columns: 260px 1fr 440px;
       flex: 1;
       height: calc(100vh - 49px);
       overflow: hidden;
@@ -297,6 +315,30 @@
       align-items: center;
     }
 
+    .alert-card {
+      border-radius: 6px;
+      padding: 12px;
+      margin-bottom: 12px;
+    }
+
+    .alert-card.dead-workaround {
+      background: rgba(248, 81, 73, 0.1);
+      border: 1px solid rgba(248, 81, 73, 0.4);
+      color: #f85149;
+    }
+
+    .alert-card.no-rationale {
+      background: rgba(110, 118, 129, 0.1);
+      border: 1px solid rgba(110, 118, 129, 0.3);
+      color: #8b949e;
+    }
+
+    .alert-card.untested {
+      background: rgba(210, 153, 34, 0.1);
+      border: 1px solid rgba(210, 153, 34, 0.4);
+      color: #e3b341;
+    }
+
     .rationale-text {
       font-size: 13px;
       line-height: 1.5;
@@ -355,8 +397,8 @@
       background: var(--bg-panel);
       border: 1px solid var(--border-color);
       border-radius: 8px;
-      width: 680px;
-      max-height: 85vh;
+      width: 720px;
+      max-height: 88vh;
       display: flex;
       flex-direction: column;
       overflow: hidden;
@@ -405,6 +447,23 @@
       font-weight: 600;
     }
 
+    .filter-tab {
+      padding: 5px 12px;
+      border-radius: 6px;
+      background: var(--bg-dark);
+      border: 1px solid var(--border-color);
+      font-size: 11px;
+      cursor: pointer;
+      color: var(--text-secondary);
+    }
+
+    .filter-tab.active {
+      background: #1f2b3e;
+      color: var(--accent-blue);
+      border-color: var(--accent-blue);
+      font-weight: 600;
+    }
+
     .chip {
       padding: 2px 8px;
       border-radius: 4px;
@@ -432,10 +491,12 @@
     <div class="header-center">
       <input type="text" id="sitePathInput" placeholder="Site path (e.g. /Users/.../subsurface)" style="flex: 1;" value="" />
       <button class="primary" onclick="openSiteFromInput()">Open Site</button>
-      <button onclick="openSiteReportModal()">Site Report</button>
+      <button onclick="openSiteReportModal()">📊 Site Report</button>
     </div>
     <div style="display: flex; align-items: center; gap: 10px;">
-      <span id="mcpIndicator" style="font-size: 11px; color: #3fb950;">● MCP Active</span>
+      <div id="activeModelPill" class="provider-pill" onclick="openSettingsModal()">
+        <span>⚡ gpt-4o</span>
+      </div>
       <button onclick="openSettingsModal()">⚙️ Settings</button>
     </div>
   </header>
@@ -444,7 +505,7 @@
     <!-- Panel 1: Repository Files -->
     <div class="panel">
       <div class="panel-header">
-        <span>Files</span>
+        <span>Repository Files</span>
         <span id="fileCount" style="font-size: 10px; color: var(--text-muted);">0 files</span>
       </div>
       <div class="panel-body">
@@ -491,10 +552,14 @@
   <div class="modal" id="settingsModal">
     <div class="modal-content">
       <div class="modal-header">
-        <span>Provider Settings & Auth (OS Keychain)</span>
+        <span>Provider Settings & Inference Auth</span>
         <button onclick="closeModal('settingsModal')">✕</button>
       </div>
       <div class="modal-body">
+        <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 12px; padding: 8px 10px; background: rgba(88, 166, 255, 0.08); border-left: 3px solid var(--accent-blue); border-radius: 4px;">
+          <strong>Archaeology Inference:</strong> The chosen model synthesizes raw git history and evidence into a plain-English explanation of why code exists. Subsurface answers "is this safe to change?", but never modifies code directly.
+        </div>
+
         <div style="margin-bottom: 14px;">
           <label style="font-size: 11px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase;">Provider Presets</label>
           <div style="display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap;" id="presetList">
@@ -516,13 +581,13 @@
           <label style="font-size: 11px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 4px;">
             API Key (Stored securely in macOS Keychain)
           </label>
-          <input type="password" id="settingApiKey" placeholder="Paste API Key (never written in plaintext)" style="width: 100%;" />
+          <input type="password" id="settingApiKey" placeholder="Paste API Key (stored in macOS Keychain, never in files)" style="width: 100%;" />
           <div id="keyStatus" style="font-size: 11px; color: var(--accent-green); margin-top: 4px;"></div>
         </div>
 
         <div style="margin-bottom: 12px;">
           <label style="font-size: 11px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 4px;">
-            Model Name (Text field with suggestions — ADR 0005)
+            Model Name (Editable text field with suggestions — ADR 0005)
           </label>
           <input type="text" id="settingModel" style="width: 100%; margin-bottom: 4px;" value="gpt-4o" />
           <div id="modelSuggestions" style="margin-top: 4px;"></div>
@@ -569,14 +634,46 @@
 
   <!-- Site Report Modal -->
   <div class="modal" id="reportModal">
-    <div class="modal-content" style="width: 760px;">
+    <div class="modal-content" style="width: 800px;">
       <div class="modal-header">
-        <span>Site Report (Read-Only Repo-wide Archaeology)</span>
+        <span>Site Report — Read-Only Repository Archaeology</span>
         <button onclick="closeModal('reportModal')">✕</button>
       </div>
       <div class="modal-body">
-        <div id="reportSummary" style="margin-bottom: 12px; font-size: 12px;"></div>
-        <div id="reportList" style="max-height: 55vh; overflow-y: auto;"></div>
+        <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 12px;">
+          The Site Report runs the Excavate engine across your repository to identify areas requiring archaeological context:
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 12px;">
+          <div style="background: rgba(248, 81, 73, 0.08); border: 1px solid rgba(248, 81, 73, 0.3); border-radius: 6px; padding: 8px 10px;">
+            <div style="font-weight: 600; color: #f85149; font-size: 11px; margin-bottom: 2px;">🚩 Dead Workarounds</div>
+            <div style="font-size: 11px; color: var(--text-muted);">Workarounds whose linked issue or bug receipt was later closed/resolved in git history.</div>
+          </div>
+          <div style="background: rgba(110, 118, 129, 0.08); border: 1px solid rgba(110, 118, 129, 0.3); border-radius: 6px; padding: 8px 10px;">
+            <div style="font-weight: 600; color: #8b949e; font-size: 11px; margin-bottom: 2px;">❓ No Rationale</div>
+            <div style="font-size: 11px; color: var(--text-muted);">Code introduced with generic commits ('fix'/'wip') with zero recorded docs or tests.</div>
+          </div>
+          <div style="background: rgba(210, 153, 34, 0.08); border: 1px solid rgba(210, 153, 34, 0.3); border-radius: 6px; padding: 8px 10px;">
+            <div style="font-weight: 600; color: #e3b341; font-size: 11px; margin-bottom: 2px;">🧪 Untested Code</div>
+            <div style="font-size: 11px; color: var(--text-muted);">Code with no co-committed tests found anywhere in change history.</div>
+          </div>
+        </div>
+
+        <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 12px;">
+          <input type="text" id="reportDirectoryFilter" placeholder="Filter by directory prefix (e.g. crates/subsurface-engine/)" style="flex: 1;" />
+          <button onclick="estimateAndPreviewReport()">Update Estimate</button>
+        </div>
+
+        <div id="reportSummary" style="margin-bottom: 12px; font-size: 12px; color: var(--text-secondary);"></div>
+
+        <div id="reportCategoryTabs" style="display: none; gap: 6px; margin-bottom: 12px;">
+          <span class="filter-tab active" onclick="filterReportCategory('All')">All (<span id="countAll">0</span>)</span>
+          <span class="filter-tab" onclick="filterReportCategory('DeadWorkaround')">🚩 Dead Workarounds (<span id="countDead">0</span>)</span>
+          <span class="filter-tab" onclick="filterReportCategory('NoRationale')">❓ No Rationale (<span id="countNoRationale">0</span>)</span>
+          <span class="filter-tab" onclick="filterReportCategory('UntestedCode')">🧪 Untested (<span id="countUntested">0</span>)</span>
+        </div>
+
+        <div id="reportList" style="max-height: 48vh; overflow-y: auto;"></div>
       </div>
       <div class="modal-footer">
         <button onclick="closeModal('reportModal')">Close</button>
@@ -593,8 +690,11 @@
     let selectedEndLine = null;
     let currentFinding = null;
     let providerPresets = [];
+    let activeSettings = null;
+    let currentReport = null;
+    let activeCategoryFilter = "All";
 
-    // Robust Tauri IPC invocation helper
+    // Robust Tauri IPC helper
     async function invokeBackend(cmd, args = {}) {
       try {
         if (window.__TAURI__ && window.__TAURI__.core && typeof window.__TAURI__.core.invoke === 'function') {
@@ -611,11 +711,10 @@
         throw err;
       }
       console.warn(`Tauri runtime not injected for command: ${cmd}`, args);
-      throw new Error("Tauri IPC bridge not ready. Please make sure the app was launched via Tauri.");
+      throw new Error("Tauri IPC bridge not ready.");
     }
 
     window.addEventListener("DOMContentLoaded", async () => {
-      // Set default path if empty
       const input = document.getElementById("sitePathInput");
       if (!input.value) {
         input.value = "/Users/vraj/Work/Projects/subsurface";
@@ -625,6 +724,7 @@
       try {
         const settings = await invokeBackend("get_provider_settings");
         if (settings) {
+          activeSettings = settings;
           providerPresets = settings.presets || [];
           document.getElementById("settingBaseUrl").value = settings.base_url || "";
           document.getElementById("settingModel").value = settings.model || "";
@@ -632,17 +732,26 @@
           if (settings.has_key) {
             document.getElementById("keyStatus").innerText = "✓ API Key configured in macOS Keychain";
           }
+          updateActiveModelBadge(settings);
           renderPresets();
         }
       } catch (e) {
         console.log("Settings init error:", e);
       }
 
-      // Try auto-opening initial site
       if (input.value) {
         openSiteFromInput();
       }
     });
+
+    function updateActiveModelBadge(settings) {
+      const pill = document.getElementById("activeModelPill");
+      if (settings.offline_mode) {
+        pill.innerHTML = `<span>🔒 Offline Mode (Git Only)</span>`;
+      } else {
+        pill.innerHTML = `<span>⚡ ${escapeHtml(settings.model || 'gpt-4o')}</span>`;
+      }
+    }
 
     async function openSiteFromInput() {
       const input = document.getElementById("sitePathInput").value.trim();
@@ -653,7 +762,7 @@
           currentSite = site;
           document.getElementById("siteMeta").innerHTML = `
             <div><strong>HEAD:</strong> ${site.head_commit ? site.head_commit.substring(0, 7) : 'None'} · ${site.total_commits_estimate} commits</div>
-            <div>${site.is_shallow ? '⚠️ Shallow clone' : 'Full history'} · ${site.has_remote ? 'Remote configured' : 'Local repo'}</div>
+            <div>${site.is_shallow ? '⚠️ Shallow clone' : 'Full history'} · ${site.has_remote ? 'Remote configured' : 'Local repository'}</div>
           `;
           renderFileList(site.tracked_files);
           if (site.tracked_files.length > 0) {
@@ -822,11 +931,46 @@
       badge.innerText = f.why.confidence;
       badge.className = `badge badge-${conf}`;
 
-      let html = `
+      let html = "";
+
+      // 1. Dead Workaround Alert Banner (if receipt found)
+      if (f.staleness && f.staleness.Stale) {
+        const receipt = f.staleness.Stale.receipt;
+        html += `
+          <div class="alert-card dead-workaround">
+            <div style="font-weight: 700; font-size: 12px; margin-bottom: 4px; display: flex; align-items: center; gap: 6px;">
+              <span>🚩 DEAD WORKAROUND DETECTED (RECEIPT FOUND)</span>
+            </div>
+            <div style="font-size: 12px; color: var(--text-primary); margin-bottom: 6px;">
+              <strong>Receipt:</strong> ${escapeHtml(receipt.receipt_text)}
+            </div>
+            <div style="font-size: 11px; color: var(--text-muted);">
+              💡 <strong>Archaeological Insight:</strong> The constraint or upstream bug that originally required this workaround was resolved in git history. This code is a prime candidate for safe removal or cleanup.
+            </div>
+          </div>
+        `;
+      }
+
+      // 2. No Rationale Alert Banner
+      if (f.why.confidence === "None") {
+        html += `
+          <div class="alert-card no-rationale">
+            <div style="font-weight: 700; font-size: 12px; margin-bottom: 4px;">
+              ❓ NO RECORDED RATIONALE
+            </div>
+            <div style="font-size: 11px; color: var(--text-secondary);">
+              All commits introducing this code used generic messages ('fix'/'wip') with zero co-committed tests or docs. Subsurface asserts no speculation.
+            </div>
+          </div>
+        `;
+      }
+
+      // 3. Why Rationale Card
+      html += `
         <div class="card">
           <div class="card-title">
             <span>Why This Code Exists</span>
-            <span style="font-size: 9px; color: var(--accent-blue);">[Reconstructed from Evidence]</span>
+            <span style="font-size: 9px; color: var(--accent-blue);">[Synthesized from Evidence]</span>
           </div>
           <div class="rationale-text">${escapeHtml(f.why.rationale)}</div>
           <div style="font-size: 11px; color: var(--text-muted); font-style: italic;">
@@ -864,10 +1008,10 @@
       if (f.what_when.related_tests.length > 0 || f.what_when.related_docs.length > 0) {
         html += `<div class="card"><div class="card-title">Co-Committed Tests & Docs (Heuristic)</div>`;
         f.what_when.related_tests.forEach(t => {
-          html += `<div style="font-family: var(--font-code); font-size: 11px; color: #3fb950;">✓ [Test] ${escapeHtml(t)}</div>`;
+          html += `<div style="font-family: var(--font-code); font-size: 11px; color: #3fb950; margin-bottom: 3px;">✓ [Test] ${escapeHtml(t)}</div>`;
         });
         f.what_when.related_docs.forEach(d => {
-          html += `<div style="font-family: var(--font-code); font-size: 11px; color: #58a6ff;">📄 [Doc] ${escapeHtml(d)}</div>`;
+          html += `<div style="font-family: var(--font-code); font-size: 11px; color: #58a6ff; margin-bottom: 3px;">📄 [Doc] ${escapeHtml(d)}</div>`;
         });
         html += `</div>`;
       }
@@ -892,6 +1036,7 @@
       `;
 
       container.innerHTML = html;
+      container.scrollTop = 0;
     }
 
     function renderPresets() {
@@ -948,6 +1093,8 @@
           apiKey: apiKey || null,
           offlineMode
         });
+        activeSettings = { base_url: baseUrl, model, offline_mode: offlineMode, has_key: !!apiKey };
+        updateActiveModelBadge(activeSettings);
         alert("Settings saved successfully!");
         closeModal("settingsModal");
       } catch (err) {
@@ -984,14 +1131,19 @@
         return;
       }
       document.getElementById("reportModal").classList.add("active");
+      await estimateAndPreviewReport();
+    }
+
+    async function estimateAndPreviewReport() {
+      if (!currentSite) return;
+      const prefix = document.getElementById("reportDirectoryFilter").value.trim() || null;
       try {
         const estimate = await invokeBackend("estimate_report", {
           sitePath: currentSite.root_path,
-          filterPrefix: null
+          filterPrefix: prefix
         });
         document.getElementById("reportSummary").innerHTML = `
-          <div><strong>Files to scan:</strong> ${estimate.file_count}</div>
-          <div><strong>Estimated duration:</strong> ~${Math.round(estimate.estimated_duration_secs)} seconds</div>
+          <div><strong>Files in scope:</strong> ${estimate.file_count} &nbsp;|&nbsp; <strong>Estimated time:</strong> ~${Math.round(estimate.estimated_duration_secs)}s</div>
         `;
       } catch (e) {
         console.error(e);
@@ -999,38 +1151,83 @@
     }
 
     async function runSiteReport() {
+      if (!currentSite) return;
+      const prefix = document.getElementById("reportDirectoryFilter").value.trim() || null;
       const btn = document.getElementById("runReportBtn");
       btn.disabled = true;
-      btn.innerText = "Scanning Site...";
+      btn.innerText = "Running Archaeology Pass...";
+
       try {
         const report = await invokeBackend("generate_report", {
           sitePath: currentSite.root_path,
-          filterPrefix: null
+          filterPrefix: prefix
         });
-        let listHtml = `<div style="margin-top: 12px; font-weight: 600;">Findings across ${report.total_files_scanned} files (${report.entries.length} items):</div>`;
-        report.entries.forEach(e => {
-          let badgeClass = "badge-none";
-          if (e.category === "DeadWorkaround") badgeClass = "badge-stated";
-          if (e.category === "NoRationale") badgeClass = "badge-none";
-          if (e.category === "UntestedCode") badgeClass = "badge-inferred";
+        currentReport = report;
 
-          listHtml += `
-            <div class="card" style="margin-top: 8px; cursor: pointer;" onclick="loadAndExcavate('${e.file_path}', ${e.line_range.start}, ${e.line_range.end})">
-              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-                <span style="font-weight: 600; color: var(--accent-blue);">${escapeHtml(e.file_path)}:${e.line_range.start}-${e.line_range.end}</span>
-                <span class="badge ${badgeClass}">${e.category}</span>
-              </div>
-              <div style="font-size: 11px; color: var(--text-secondary);">${escapeHtml(e.description)}</div>
-            </div>
-          `;
-        });
-        document.getElementById("reportList").innerHTML = listHtml;
+        // Count categories
+        let deadCount = report.entries.filter(e => e.category === "DeadWorkaround").length;
+        let noRationaleCount = report.entries.filter(e => e.category === "NoRationale").length;
+        let untestedCount = report.entries.filter(e => e.category === "UntestedCode").length;
+
+        document.getElementById("countAll").innerText = report.entries.length;
+        document.getElementById("countDead").innerText = deadCount;
+        document.getElementById("countNoRationale").innerText = noRationaleCount;
+        document.getElementById("countUntested").innerText = untestedCount;
+        document.getElementById("reportCategoryTabs").style.display = "flex";
+
+        renderReportList();
       } catch (err) {
         alert("Report generation failed: " + err);
       } finally {
         btn.disabled = false;
         btn.innerText = "Run Site Report";
       }
+    }
+
+    function filterReportCategory(cat) {
+      activeCategoryFilter = cat;
+      document.querySelectorAll(".filter-tab").forEach(el => el.classList.remove("active"));
+      event.target.classList.add("active");
+      renderReportList();
+    }
+
+    function renderReportList() {
+      if (!currentReport) return;
+      const listDiv = document.getElementById("reportList");
+      let entries = currentReport.entries;
+      if (activeCategoryFilter !== "All") {
+        entries = entries.filter(e => e.category === activeCategoryFilter);
+      }
+
+      if (entries.length === 0) {
+        listDiv.innerHTML = `<div style="padding: 20px; color: var(--text-muted); text-align: center;">No findings in this category.</div>`;
+        return;
+      }
+
+      let html = "";
+      entries.forEach(e => {
+        let badgeClass = "badge-none";
+        let icon = "❓";
+        if (e.category === "DeadWorkaround") {
+          badgeClass = "badge-stated";
+          icon = "🚩";
+        } else if (e.category === "UntestedCode") {
+          badgeClass = "badge-inferred";
+          icon = "🧪";
+        }
+
+        html += `
+          <div class="card" style="margin-top: 8px; cursor: pointer;" onclick="loadAndExcavate('${e.file_path}', ${e.line_range.start}, ${e.line_range.end})">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+              <span style="font-weight: 600; color: var(--accent-blue); font-family: var(--font-code);">${icon} ${escapeHtml(e.file_path)}:${e.line_range.start}-${e.line_range.end}</span>
+              <span class="badge ${badgeClass}">${e.category}</span>
+            </div>
+            <div style="font-size: 11px; color: var(--text-primary); margin-bottom: 4px;">${escapeHtml(e.description)}</div>
+            <div style="font-size: 10px; color: var(--text-muted);">Click to jump to code & inspect full archaeological evidence →</div>
+          </div>
+        `;
+      });
+      listDiv.innerHTML = html;
     }
 
     async function loadAndExcavate(filePath, start, end) {

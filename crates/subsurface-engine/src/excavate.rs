@@ -9,6 +9,7 @@ use crate::confidence::{assign_confidence, Confidence};
 use crate::evidence::{walk_evidence, Evidence, EvidenceKind, LineRange};
 use crate::provider::Provider;
 use crate::site::Site;
+use crate::staleness::{detect_staleness, StalenessStatus};
 
 #[derive(Debug, Error)]
 pub enum ExcavateError {
@@ -69,6 +70,7 @@ pub struct Finding {
     pub what_when: WhatWhen,
     pub why: WhyRationale,
     pub budget_summary: BudgetSummary,
+    pub staleness: StalenessStatus,
 }
 
 /// The single seam through which UI, MCP server, and Site Report all operate.
@@ -157,7 +159,10 @@ pub fn excavate(
         related_docs,
     };
 
-    // 6. Build Why half (evidence-gated)
+    // 6. Detect receipt-gated staleness
+    let staleness = detect_staleness(site, file_path, &what_when.timeline);
+
+    // 7. Build Why half (evidence-gated)
     let why = match confidence {
         Confidence::None => WhyRationale {
             rationale: "No recorded rationale found for this selection. The repository history records changes to this code, but no commit message, document, or test states why."
@@ -240,5 +245,6 @@ pub fn excavate(
         what_when,
         why,
         budget_summary,
+        staleness,
     })
 }

@@ -1,6 +1,6 @@
 use std::process::Command;
 use serde::{Deserialize, Serialize};
-use crate::excavate::Finding;
+use crate::excavate::TimelineEntry;
 use crate::site::Site;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -23,11 +23,11 @@ pub enum StalenessStatus {
     Active,
 }
 
-/// Checks if any workaround in the Finding has a concrete receipt saying it is dead.
+/// Checks if any workaround in the timeline has a concrete receipt saying it is dead.
 /// Invariant: Age, churn, and TODO comments are NOT receipts.
-pub fn detect_staleness(site: &Site, finding: &Finding) -> StalenessStatus {
+pub fn detect_staleness(site: &Site, file_path: &str, timeline: &[TimelineEntry]) -> StalenessStatus {
     let mut referenced_issues = Vec::new();
-    for entry in &finding.what_when.timeline {
+    for entry in timeline {
         let msg = &entry.message;
         for word in msg.split(|c: char| !c.is_alphanumeric() && c != '#') {
             if word.starts_with('#') && word.len() > 1 {
@@ -82,7 +82,7 @@ pub fn detect_staleness(site: &Site, finding: &Finding) -> StalenessStatus {
                                     subject
                                 ),
                                 commit_sha,
-                                file_path: finding.file_path.clone(),
+                                file_path: file_path.to_string(),
                             },
                         };
                     }

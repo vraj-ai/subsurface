@@ -174,7 +174,7 @@ fn excavate_range(
 #[tauri::command]
 fn check_staleness(site_path: String, finding: Finding) -> Result<StalenessStatus, String> {
     let site = Site::open(PathBuf::from(&site_path)).map_err(|e| e.to_string())?;
-    Ok(detect_staleness(&site, &finding))
+    Ok(detect_staleness(&site, &finding.file_path, &finding.what_when.timeline))
 }
 
 #[tauri::command]

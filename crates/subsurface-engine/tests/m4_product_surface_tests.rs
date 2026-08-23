@@ -5,7 +5,7 @@ use subsurface_engine::fixture::GitFixture;
 use subsurface_engine::mcp::{McpServer, McpToolCall};
 use subsurface_engine::provider::FakeProvider;
 use subsurface_engine::site::Site;
-use subsurface_engine::staleness::{detect_staleness, StalenessStatus};
+use subsurface_engine::staleness::StalenessStatus;
 use subsurface_engine::store::SqliteStore;
 
 #[test]
@@ -27,8 +27,7 @@ fn test_staleness_flag_with_receipt() {
     let provider = Arc::new(FakeProvider::new("Workaround explanation"));
     let finding = excavate(&site, "src/client.rs", range, provider).expect("excavate");
 
-    let staleness = detect_staleness(&site, &finding);
-    match staleness {
+    match finding.staleness {
         StalenessStatus::Stale { receipt } => {
             assert!(receipt.receipt_text.contains("#42") || receipt.receipt_text.contains("Closes"));
             assert_eq!(receipt.commit_sha, c2);
@@ -58,9 +57,8 @@ fn test_staleness_no_flag_on_old_churny_todo_code() {
     let provider = Arc::new(FakeProvider::new("Legacy guard explanation"));
     let finding = excavate(&site, "src/legacy.rs", range, provider).expect("excavate");
 
-    let staleness = detect_staleness(&site, &finding);
     // Invariant: Age, churn, and TODOs are NOT receipts -> must remain Active (no staleness flag)
-    assert_eq!(staleness, StalenessStatus::Active);
+    assert_eq!(finding.staleness, StalenessStatus::Active);
 }
 
 #[test]
