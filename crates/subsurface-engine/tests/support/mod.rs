@@ -11,6 +11,7 @@ pub struct StubResponse {
     status: u16,
     body: String,
     delay: Duration,
+    location: Option<String>,
 }
 
 impl StubResponse {
@@ -19,6 +20,16 @@ impl StubResponse {
             status,
             body: body.into(),
             delay: Duration::ZERO,
+            location: None,
+        }
+    }
+
+    pub fn redirect(status: u16, location: impl Into<String>) -> Self {
+        Self {
+            status,
+            body: String::new(),
+            delay: Duration::ZERO,
+            location: Some(location.into()),
         }
     }
 
@@ -36,10 +47,16 @@ impl StubResponse {
             500 => "Internal Server Error",
             _ => "Test Response",
         };
+        let location = self
+            .location
+            .as_ref()
+            .map(|value| format!("Location: {value}\r\n"))
+            .unwrap_or_default();
         format!(
-            "HTTP/1.1 {} {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+            "HTTP/1.1 {} {}\r\n{}Content-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
             self.status,
             reason,
+            location,
             self.body.len(),
             self.body
         )

@@ -409,6 +409,7 @@ impl OAuthClient {
     ) -> Result<reqwest::blocking::Response, OAuthError> {
         let client = reqwest::blocking::Client::builder()
             .timeout(self.timeout)
+            .redirect(reqwest::redirect::Policy::none())
             .build()
             .map_err(|error| OAuthError::Network(error.to_string()))?;
         client

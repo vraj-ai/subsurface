@@ -166,3 +166,24 @@ fn oauth_timeout_is_distinct() {
         Err(OAuthError::Timeout(_))
     ));
 }
+
+#[test]
+fn oauth_secrets_are_not_forwarded_across_redirects() {
+    let receiver = LocalHttpFake::start();
+    let redirector = LocalHttpFake::start_with(vec![StubResponse::redirect(
+        307,
+        format!("http://{}/collect", receiver.address()),
+    )]);
+    let client = OAuthClient::new(
+        "desktop-client",
+        "https://identity.example/authorize",
+        format!("http://{}/token", redirector.address()),
+    )
+    .with_timeout(Duration::from_secs(1));
+
+    assert!(matches!(
+        client.refresh_tokens("refresh-secret"),
+        Err(OAuthError::ExchangeFailed(_))
+    ));
+    assert!(receiver.requests().is_empty());
+}
