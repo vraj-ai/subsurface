@@ -76,6 +76,7 @@ impl LocalHttpFake {
 
             match listener.accept() {
                 Ok((mut stream, _)) => {
+                    let _ = stream.set_nonblocking(false);
                     let request = read_request(&mut stream);
                     captured
                         .lock()
