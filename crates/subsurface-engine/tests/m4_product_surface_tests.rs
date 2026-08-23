@@ -78,7 +78,7 @@ fn test_mcp_excavate_returns_structured_finding_and_records_field_note() {
     let site = Site::open(fixture.path()).expect("site");
 
     let call = McpToolCall::Excavate {
-        site_path: site.root_path.to_string_lossy().to_string(),
+        project_path: site.root_path.to_string_lossy().to_string(),
         file_path: "src/calc.rs".to_string(),
         start_line: 1,
         end_line: 1,
@@ -115,7 +115,7 @@ fn test_mcp_returns_existing_field_note_if_saved() {
         .expect("save note");
 
     let call = McpToolCall::Excavate {
-        site_path: site.root_path.to_string_lossy().to_string(),
+        project_path: site.root_path.to_string_lossy().to_string(),
         file_path: "src/main.rs".to_string(),
         start_line: 1,
         end_line: 1,
