@@ -1,66 +1,77 @@
 # Roadmap
 
-Everything deliberately cut from v1, and what it waits on. Nothing here is
-rejected — rejected things are Non-goals in `CONTEXT/architecture.md`.
-
 Versions are ordered, not dated. A feature moves up when the thing it waits on
 exists, not when someone feels like it.
 
 ## v1 — one Excavate, done properly
 
-Select a line range, get a Finding: what the code does, when it appeared, how it
-evolved, which tests touch it, and why — where a receipt exists. Plus the Site
-Report: the same engine run across the whole repo, read-only. Git, tests and
-docs as Evidence. Provider auth. MCP server. Field Notes in SQLite.
+Open one git repository as a Project, select a line range, and get a Finding:
+what the code does, when it appeared, how it evolved, which tests touch it, and
+why — where Evidence exists. Includes the original Project Assessment, provider
+auth, MCP server, and Field Notes in SQLite.
 
-## v1.1 — the evidence that actually says why
+## v1.1 — evidence to verified improvement
 
-- **GitHub / GitLab PRs and issues as Evidence.** The real rationale usually
-  lives in a PR comment, not a commit message. Waits on v1 because it drags in
-  network auth, rate limits, and per-forge APIs, and v1's answer quality is what
-  tells us how much it's worth.
-- **Staleness receipts from issue state.** Once issues are indexed, "the linked
-  issue is closed" becomes checkable, which is half of `docs/adr/0006`.
-- **Field Note export.** Markdown out of the SQLite store, so an investigation
-  can be shared or committed by hand.
+The version tracked by issue #21. It ships the complete agreed feature set:
 
-## v1.2 — the PR reviewer
+- Project vocabulary and a distinctive, accessible redesign of every current
+  workflow, including a hierarchical file tree and integrated activity center.
+- Native provider connections plus an optional OpenCode bridge, authenticated
+  OpenCode Free, Zen and Go, dynamic models, OAuth methods exposed by the
+  provider, all published Go text protocols, persistence, and real contract and
+  opt-in live tests.
+- Project Overview and Project Assessment as the primary experience, with
+  Opportunities linked through Findings and Evidence to candidate preparation.
+- Strict Project and Candidate Quality Grades, provisional model critique for
+  incomplete measurement, and baseline-to-candidate Improvement Receipts.
+- Disposable-clone preparation, isolated approved commands, verification,
+  manual GitHub Work Items, and explicitly enabled grade-threshold automatic
+  publication. The active Project is never modified.
 
-- **Review bot for PRs and commits.** The CodeRabbit shape, with the thing
-  CodeRabbit does not have: history. A reviewer that already knows why the code
-  it is reading exists, which past commit introduced the constraint being
-  broken, and which workaround is being removed with no receipt saying it is
-  dead. Review comments cite Evidence under `docs/adr/0001`'s rule — no receipt,
-  no claim.
-- Waits on v1.1, because PR and issue ingestion is the same forge integration
-  the reviewer needs, and on v1 because a review comment is a Finding with a
-  different presentation.
-- Provider is whatever the user configured under `docs/adr/0005`; the bot ships
-  no model of its own.
+## v1.2 — more Evidence and more trackers
 
-## v1.3 — symbols instead of line ranges
+- **GitHub and GitLab PRs and issues as Evidence.** The real rationale often
+  lives in review discussion rather than a commit message.
+- **Staleness receipts from tracker state.** A closed linked issue becomes a
+  checkable receipt instead of a commit-message heuristic.
+- **Additional Work Item destinations.** GitLab, Linear, and Jira follow only
+  after GitHub publication and idempotency are proven.
+- **Field Note export.** Markdown out of the SQLite store for deliberate sharing
+  or manual commit.
 
-- **Language parsers.** Track a function or class through history instead of a
-  line range. One parser per language, so it lands language by language, most
-  used first. Line ranges keep working everywhere else.
-- **Coverage-based test linking**, if and only if the co-commit heuristic proves
-  too noisy in practice. Requires building and running the user's project, which
-  is why it is not the default.
+## v1.3 — the pull-request workflow
 
-## v1.4 — more than one dig at a time
+- **History-aware review for pull requests and commits.** Review comments remain
+  Findings and cite Evidence under ADR-0001.
+- **Pull-request creation from a verified candidate.** A user may promote a
+  prepared candidate after reviewing its diff and Improvement Receipt.
+- Automatic merge remains out: creating a reviewable proposal and merging code
+  are different authority boundaries.
 
-- **Actions on the Site Report.** Turning a reported problem into a tracked work
-  item, or handing it to an agent over MCP. Deliberately absent from v1: the
-  report names problems, it does not manage them.
-- **Background analysis.** Keeping the Site Report fresh without being asked.
-  Waits until the report's ranking has been re-tuned against real Findings.
-- **Multiple Sites in one workspace.**
+## v1.4 — language intelligence
+
+- **Language parsers and first-party analyzers.** Track symbols and calculate
+  language-aware metrics incrementally, one language at a time. Line ranges and
+  project-provided tooling keep working everywhere else.
+- **Coverage-based test linking**, only where the co-commit heuristic proves too
+  noisy and the Project already has a reliable coverage command.
+
+## v1.5 — larger workspaces
+
+- **Background Project Assessment**, explicitly enabled and bounded by saved
+  provider, command, and privacy permissions.
+- **Multi-repository Projects and workspaces**, after ownership, grading, and
+  tracker routing across repositories have concrete rules.
 
 ## Later, unscheduled
 
-- **Jump in from outside** — open Subsurface at an exact location from a file
-  path, a pasted GitHub link, or a terminal command.
-- **Orientation flow** for a new joiner reading an unfamiliar codebase, and
-  **cleanup flow** for a maintainer hunting dead workarounds. Both are
-  compositions of the v1 Excavate and Site Report.
+- **Automatic merge**, only after production evidence shows verified candidates,
+  branch protections, rollback, and approval policies make it defensible.
+- **Windows and Linux**, each with its own signing, secure storage, command
+  isolation, and webview verification work.
+- **Managed hosted fallback**, authenticated and explicit; never a shared or
+  anonymous secret hidden inside the app.
+- **Jump in from outside** from a file path, repository link, or terminal command.
+- **Orientation and cleanup flows** composed from Project Assessment,
+  Opportunities, Excavate, and Findings.
 - **Architectural maps.**

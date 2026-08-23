@@ -3,10 +3,10 @@
 ## Purpose
 
 Subsurface is a local-first desktop tool that answers one question about a
-selected region of code: **is this safe to change?** It answers by reading the
-evidence the repository already contains — for one selected region on demand,
-and across a whole Site in the Site Report. It exists to make codebases better
-by making their history legible, without writing code itself.
+selected region of code: **is this safe to change?** It reads the Evidence the
+repository already contains, turns verified problems into Opportunities, and
+can prepare and test a candidate in a disposable clone before publishing an
+approved Work Item. It improves codebases without applying changes to the Site.
 
 ## Locked Decisions
 
@@ -24,10 +24,20 @@ by making their history legible, without writing code itself.
 - Opening a Site indexes only the cheap things — commit graph, paths, renames.
   Expensive walks happen per Excavate.
 - The shell is Tauri with a Rust backend. See `docs/adr/0003`.
-- The primary flow is select code -> Excavate -> Finding.
-- v1 also ships the Site Report: a read-only, repo-level view of what has no
-  recorded rationale, what looks dead, and what nothing tests. It is a saved
-  query over the Excavate engine, not a separate one. See `docs/adr/0008`.
+- The primary flow is open Site -> Site Report -> Opportunity -> Finding ->
+  prepare -> verify -> Work Item. Direct Excavate remains available.
+- The Site Report is the primary improvement workspace. It grades only measured
+  quality, surfaces Opportunities, and drills into the same Findings produced
+  by Excavate. See `docs/adr/0009`.
+- An Opportunity moves through Detected, Prepared, Verified or Failed, then
+  Published or Dismissed. Preparation and tests run only in a disposable clone;
+  the Site is never modified. See `docs/adr/0009`.
+- A Quality Grade is `A+` through `F`, or `Incomplete`. The overall grade is the
+  lowest measured dimension. A model may add a provisional critique but never
+  manufacture a missing metric. See `docs/adr/0010`.
+- Automatic Work Item publication is off by default and requires explicit
+  per-Site, per-category enablement plus a user-selected minimum Quality Grade.
+  `Incomplete` and model-only assessments are never eligible.
 - Related tests are found by co-commit; staleness is flagged only with a
   receipt. See `docs/adr/0006`.
 - Field Notes live in a per-machine SQLite database in app data, keyed by Site.
@@ -44,6 +54,10 @@ by making their history legible, without writing code itself.
 - Indexing, blame, rename-following and Timelines run locally regardless of
   which provider is configured.
 - Subsurface never writes into the user's repository.
+- Generated candidates and repository commands run only in a disposable clone
+  under an explicit per-Site command allowlist.
+- Every Quality Grade deduction cites an Improvement Receipt; missing required
+  measurements produce `Incomplete`.
 - Nothing is sent to a provider without the user seeing what it is.
 - Evidence sent per Excavate is a fixed budget, ranked by how much of the
   selection each commit touched. What was left out is shown, never silently
@@ -51,9 +65,10 @@ by making their history legible, without writing code itself.
 
 ## Non-goals
 
-- Subsurface never writes or suggests code edits. It may flag that a workaround
-  looks dead and show why; the change is the developer's.
-- Not an editor, a git client, a coding assistant, or a documentation generator.
+- Subsurface never applies a candidate to the active Site and does not replace
+  an editor, git client, pull-request workflow, or documentation system.
+- A prepared candidate is a verified proposal attached to a Work Item, not a
+  silent edit or an automatically merged change.
 
 ## Accepted Boundaries
 

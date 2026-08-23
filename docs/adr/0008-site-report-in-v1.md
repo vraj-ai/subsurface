@@ -1,5 +1,7 @@
 # The Site Report ships in v1, and stays read-only
 
+Status: superseded by ADR-0009
+
 Subsurface is meant to improve codebases, not only explain them, so v1 ships a
 repo-level report alongside the single Excavate: which areas have no recorded
 rationale, which workarounds have a receipt saying they are dead, which regions
