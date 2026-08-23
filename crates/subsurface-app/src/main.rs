@@ -17,7 +17,7 @@ use subsurface_engine::project::Project;
 use subsurface_engine::report::{estimate_site_report_cost, generate_site_report, SiteReport, SiteReportEstimate};
 use subsurface_engine::site::{RecentSitesStore, Site};
 use subsurface_engine::staleness::{detect_staleness, StalenessStatus};
-use subsurface_engine::store::{FieldNote, SqliteStore};
+use subsurface_engine::store::{ActivityRecord, ActivityStatus, FieldNote, SqliteStore};
 use subsurface_engine::workspace::{discover_git_repositories, get_default_scan_roots, DiscoveredSiteInfo};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -69,14 +69,42 @@ fn open_site(path: String, state: State<'_, AppState>) -> Result<Site, String> {
 fn open_project_inner(path: &str, state: &AppState) -> Result<Project, String> {
     let p = PathBuf::from(path);
     let project = Project::open(&p).map_err(|e| e.to_string())?;
+    let activity_id = state
+        .store
+        .record_activity(&project.root_path, "project_open", "Open Project")
+        .ok();
+    if let Some(id) = activity_id.as_deref() {
+        let _ = state
+            .store
+            .update_activity(id, ActivityStatus::Running, None);
+    }
 
-    let mut recents = state.recent_sites.lock().unwrap();
-    recents.add(project.root_path.clone());
+    state
+        .recent_sites
+        .lock()
+        .unwrap()
+        .add(project.root_path.clone());
 
     let name = p.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| "repo".to_string());
     let _ = state.store.record_site_opened(&project.root_path, &name);
+    if let Some(id) = activity_id.as_deref() {
+        let _ = state
+            .store
+            .update_activity(id, ActivityStatus::Succeeded, None);
+    }
 
     Ok(project)
+}
+
+#[tauri::command]
+fn list_project_activities(
+    project_path: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<ActivityRecord>, String> {
+    state
+        .store
+        .list_activities(&PathBuf::from(project_path))
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -318,17 +346,47 @@ fn assess_project_inner(
     state: &AppState,
 ) -> Result<SiteReport, String> {
     let project = Project::open(PathBuf::from(project_path)).map_err(|e| e.to_string())?;
+    let activity_id = state
+        .store
+        .record_activity(&project.root_path, "assessment", "Assess Project")
+        .ok();
+    if let Some(id) = activity_id.as_deref() {
+        let _ = state
+            .store
+            .update_activity(id, ActivityStatus::Running, None);
+    }
     let settings = state.settings.lock().unwrap().clone();
-    let key = KeychainStore::get_key("subsurface_api_key").unwrap_or_default().unwrap_or_default();
+    let key = if settings.offline_mode {
+        String::new()
+    } else {
+        KeychainStore::get_key("subsurface_api_key").unwrap_or_default().unwrap_or_default()
+    };
     let provider: Arc<dyn Provider> = if settings.offline_mode {
-        Arc::new(FakeProvider::new("Site report offline pass"))
+        Arc::new(FakeProvider::new("Project assessment offline pass"))
     } else if !key.is_empty() || settings.base_url.contains("localhost") {
         Arc::new(OpenAICompatibleProvider::new(&settings.base_url, &key, &settings.model))
     } else {
-        Arc::new(FakeProvider::new("Site report archaeology pass"))
+        Arc::new(FakeProvider::new("Project assessment archaeology pass"))
     };
 
-    generate_site_report(&project, filter_prefix, provider).map_err(|e| e.to_string())
+    match generate_site_report(&project, filter_prefix, provider).map_err(|e| e.to_string()) {
+        Ok(report) => {
+            if let Some(id) = activity_id.as_deref() {
+                let _ = state
+                    .store
+                    .update_activity(id, ActivityStatus::Succeeded, None);
+            }
+            Ok(report)
+        }
+        Err(error) => {
+            if let Some(id) = activity_id.as_deref() {
+                let _ = state
+                    .store
+                    .update_activity(id, ActivityStatus::Failed, Some(&error));
+            }
+            Err(error)
+        }
+    }
 }
 
 #[tauri::command]
@@ -423,6 +481,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             open_project,
             open_site,
+            list_project_activities,
             get_home_workspace,
             toggle_pin_site,
             add_scan_root,
@@ -444,4 +503,63 @@ fn main() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use subsurface_engine::fixture::GitFixture;
+
+    fn test_state() -> AppState {
+        let store = Arc::new(SqliteStore::in_memory().expect("store"));
+        AppState {
+            mcp: Arc::new(McpServer::new(
+                store.clone(),
+                Arc::new(FakeProvider::new("test")),
+            )),
+            store,
+            recent_sites: Arc::new(Mutex::new(RecentSitesStore::default())),
+            settings: Arc::new(Mutex::new(ProviderSettings {
+                base_url: String::new(),
+                model: String::new(),
+                has_key: false,
+                offline_mode: true,
+                presets: Vec::new(),
+            })),
+        }
+    }
+
+    #[test]
+    fn project_workflows_record_terminal_activities() {
+        let mut project = GitFixture::new();
+        project.commit("initial", &[("src/lib.rs", "fn example() {}\n")]);
+        let state = test_state();
+
+        let opened =
+            open_project_inner(project.path().to_str().unwrap(), &state).expect("open project");
+        assess_project_inner(project.path().to_str().unwrap(), None, &state)
+            .expect("assess project");
+
+        let activities = state
+            .store
+            .list_activities(&opened.root_path)
+            .expect("activities");
+        assert_eq!(activities.len(), 2);
+        assert!(activities
+            .iter()
+            .all(|activity| activity.status == ActivityStatus::Succeeded));
+
+        let empty_project = GitFixture::new();
+        let empty_project_path = Project::open(empty_project.path())
+            .expect("empty project")
+            .root_path;
+        let error = assess_project_inner(empty_project.path().to_str().unwrap(), None, &state)
+            .expect_err("assessment without HEAD");
+        let failed = state
+            .store
+            .list_activities(&empty_project_path)
+            .expect("failed activity");
+        assert_eq!(failed[0].status, ActivityStatus::Failed);
+        assert_eq!(failed[0].detail.as_deref(), Some(error.as_str()));
+    }
 }
