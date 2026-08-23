@@ -20,6 +20,53 @@ pub enum StoreError {
     Io(#[from] std::io::Error),
     #[error("Lock error")]
     Lock,
+    #[error("Unknown activity status: {0}")]
+    InvalidActivityStatus(String),
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ActivityStatus {
+    Queued,
+    Running,
+    Succeeded,
+    Failed,
+    Cancelled,
+}
+
+impl ActivityStatus {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Queued => "queued",
+            Self::Running => "running",
+            Self::Succeeded => "succeeded",
+            Self::Failed => "failed",
+            Self::Cancelled => "cancelled",
+        }
+    }
+
+    fn parse(value: String) -> Result<Self, StoreError> {
+        match value.as_str() {
+            "queued" => Ok(Self::Queued),
+            "running" => Ok(Self::Running),
+            "succeeded" => Ok(Self::Succeeded),
+            "failed" => Ok(Self::Failed),
+            "cancelled" => Ok(Self::Cancelled),
+            _ => Err(StoreError::InvalidActivityStatus(value)),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ActivityRecord {
+    pub id: String,
+    pub project_path: PathBuf,
+    pub kind: String,
+    pub title: String,
+    pub status: ActivityStatus,
+    pub detail: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -110,7 +157,20 @@ impl SqliteStore {
             
             CREATE TABLE IF NOT EXISTS scan_roots (
                 path TEXT PRIMARY KEY
-            );",
+            );
+
+            CREATE TABLE IF NOT EXISTS activities (
+                id TEXT PRIMARY KEY,
+                project_path TEXT NOT NULL,
+                kind TEXT NOT NULL,
+                title TEXT NOT NULL,
+                status TEXT NOT NULL,
+                detail TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_activities_project_updated
+                ON activities(project_path, updated_at DESC);",
         )?;
         migrate_project_paths(&conn)?;
         Ok(())
@@ -208,6 +268,82 @@ impl SqliteStore {
             list.push(r?);
         }
         Ok(list)
+    }
+
+    pub fn record_activity(
+        &self,
+        project_path: &Path,
+        kind: &str,
+        title: &str,
+    ) -> Result<String, StoreError> {
+        let id = Uuid::new_v4().to_string();
+        let now = Utc::now().to_rfc3339();
+        let conn = self.conn.lock().map_err(|_| StoreError::Lock)?;
+        conn.execute(
+            "INSERT INTO activities
+             (id, project_path, kind, title, status, detail, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, NULL, ?6, ?6)",
+            params![
+                id,
+                project_path.to_string_lossy(),
+                kind,
+                title,
+                ActivityStatus::Queued.as_str(),
+                now,
+            ],
+        )?;
+        Ok(id)
+    }
+
+    pub fn update_activity(
+        &self,
+        id: &str,
+        status: ActivityStatus,
+        detail: Option<&str>,
+    ) -> Result<bool, StoreError> {
+        let conn = self.conn.lock().map_err(|_| StoreError::Lock)?;
+        let updated = conn.execute(
+            "UPDATE activities
+             SET status = ?1, detail = COALESCE(?2, detail), updated_at = ?3
+             WHERE id = ?4",
+            params![status.as_str(), detail, Utc::now().to_rfc3339(), id],
+        )?;
+        Ok(updated > 0)
+    }
+
+    pub fn list_activities(&self, project_path: &Path) -> Result<Vec<ActivityRecord>, StoreError> {
+        let conn = self.conn.lock().map_err(|_| StoreError::Lock)?;
+        let mut stmt = conn.prepare(
+            "SELECT id, project_path, kind, title, status, detail, created_at, updated_at
+             FROM activities WHERE project_path = ?1 ORDER BY updated_at DESC",
+        )?;
+        let rows = stmt.query_map([project_path.to_string_lossy()], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, String>(4)?,
+                row.get::<_, Option<String>>(5)?,
+                row.get::<_, String>(6)?,
+                row.get::<_, String>(7)?,
+            ))
+        })?;
+
+        rows.map(|row| {
+            let (id, path, kind, title, status, detail, created_at, updated_at) = row?;
+            Ok(ActivityRecord {
+                id,
+                project_path: PathBuf::from(path),
+                kind,
+                title,
+                status: ActivityStatus::parse(status)?,
+                detail,
+                created_at,
+                updated_at,
+            })
+        })
+        .collect()
     }
 
     pub fn save_field_note(
