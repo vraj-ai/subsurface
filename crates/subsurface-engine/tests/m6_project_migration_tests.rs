@@ -4,6 +4,8 @@ use std::sync::Arc;
 use subsurface_engine::fixture::GitFixture;
 use subsurface_engine::mcp::{McpServer, McpToolCall};
 use subsurface_engine::provider::FakeProvider;
+use subsurface_engine::project::Project;
+use subsurface_engine::report::{generate_site_report, ReportError};
 use subsurface_engine::store::SqliteStore;
 
 #[test]
@@ -119,4 +121,23 @@ fn mcp_accepts_site_emits_project() {
 
     assert_eq!(response["finding"]["project_path"], canonical_path);
     assert!(response["finding"].get("site_path").is_none());
+
+    let project = Project::open(fixture.path()).expect("project");
+    let report = generate_site_report(
+        &project,
+        None,
+        Arc::new(FakeProvider::new("Local rationale")),
+    )
+    .expect("assess project response");
+    let response = serde_json::to_value(report).expect("serialize assessment response");
+
+    assert_eq!(response["project_path"], canonical_path);
+    assert!(response.get("site_path").is_none());
+    let entries = response["entries"].as_array().expect("entries");
+    assert!(!entries.is_empty());
+    assert!(entries.iter().all(|entry| {
+        entry["finding"].get("project_path").is_some()
+            && entry["finding"].get("site_path").is_none()
+    }));
+    assert_eq!(ReportError::NoHeadCommit.to_string(), "Project has no HEAD commit");
 }
