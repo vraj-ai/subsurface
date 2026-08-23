@@ -63,6 +63,7 @@ pub struct BudgetSummary {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Finding {
+    #[serde(rename = "project_path", alias = "site_path")]
     pub site_path: PathBuf,
     pub file_path: String,
     pub line_range: LineRange,

@@ -1,4 +1,9 @@
 use rusqlite::Connection;
+use serde_json::json;
+use std::sync::Arc;
+use subsurface_engine::fixture::GitFixture;
+use subsurface_engine::mcp::{McpServer, McpToolCall};
+use subsurface_engine::provider::FakeProvider;
 use subsurface_engine::store::SqliteStore;
 
 #[test]
@@ -89,4 +94,29 @@ fn migrates_legacy_site_rows_without_loss() {
         assert_eq!(project, project_path);
         assert_eq!(count, 1);
     }
+}
+
+#[test]
+fn mcp_accepts_site_emits_project() {
+    let store = Arc::new(SqliteStore::in_memory().expect("store"));
+    let mcp = McpServer::new(store, Arc::new(FakeProvider::new("Local rationale")));
+    let mut fixture = GitFixture::new();
+    fixture.commit("initial", &[("src/lib.rs", "fn example() {}\n")]);
+
+    let legacy_call: McpToolCall = serde_json::from_value(json!({
+        "Excavate": {
+            "site_path": fixture.path().to_string_lossy(),
+            "file_path": "src/lib.rs",
+            "start_line": 1,
+            "end_line": 1
+        }
+    }))
+    .expect("legacy site_path input");
+
+    let result = mcp.handle_tool_call(legacy_call).expect("MCP excavate");
+    let canonical_path = result.finding.site_path.to_string_lossy().to_string();
+    let response = serde_json::to_value(result).expect("serialize response");
+
+    assert_eq!(response["finding"]["project_path"], canonical_path);
+    assert!(response["finding"].get("site_path").is_none());
 }
