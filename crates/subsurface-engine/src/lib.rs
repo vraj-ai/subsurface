@@ -10,3 +10,4 @@ pub mod report;
 pub mod site;
 pub mod staleness;
 pub mod store;
+pub mod workspace;

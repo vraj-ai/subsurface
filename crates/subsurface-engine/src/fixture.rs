@@ -5,7 +5,7 @@ use tempfile::TempDir;
 
 /// A deterministic Git fixture repository on disk for testing.
 pub struct GitFixture {
-    _temp_dir: TempDir,
+    _temp_dir: Option<TempDir>,
     repo_path: PathBuf,
     commit_count: u32,
 }
@@ -15,8 +15,18 @@ impl GitFixture {
         let temp_dir = tempfile::tempdir().expect("failed to create temp dir for fixture");
         let repo_path = temp_dir.path().to_path_buf();
         let mut fixture = Self {
-            _temp_dir: temp_dir,
+            _temp_dir: Some(temp_dir),
             repo_path,
+            commit_count: 0,
+        };
+        fixture.init();
+        fixture
+    }
+
+    pub fn new_at(path: &Path) -> Self {
+        let mut fixture = Self {
+            _temp_dir: None,
+            repo_path: path.to_path_buf(),
             commit_count: 0,
         };
         fixture.init();

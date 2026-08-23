@@ -17,6 +17,7 @@ use subsurface_engine::report::{estimate_site_report_cost, generate_site_report,
 use subsurface_engine::site::{RecentSitesStore, Site};
 use subsurface_engine::staleness::{detect_staleness, StalenessStatus};
 use subsurface_engine::store::{FieldNote, SqliteStore};
+use subsurface_engine::workspace::{discover_git_repositories, get_default_scan_roots, DiscoveredSiteInfo};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PresetInfo {
@@ -32,6 +33,14 @@ pub struct ProviderSettings {
     pub has_key: bool,
     pub offline_mode: bool,
     pub presets: Vec<PresetInfo>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HomeWorkspaceData {
+    pub pinned_sites: Vec<DiscoveredSiteInfo>,
+    pub recent_sites: Vec<DiscoveredSiteInfo>,
+    pub discovered_sites: Vec<DiscoveredSiteInfo>,
+    pub scan_roots: Vec<String>,
 }
 
 pub struct AppState {
@@ -54,7 +63,78 @@ fn open_site(path: String, state: State<'_, AppState>) -> Result<Site, String> {
     let mut recents = state.recent_sites.lock().unwrap();
     recents.add(site.root_path.clone());
 
+    let name = p.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| "repo".to_string());
+    let _ = state.store.record_site_opened(&site.root_path, &name);
+
     Ok(site)
+}
+
+#[tauri::command]
+fn get_home_workspace(state: State<'_, AppState>) -> Result<HomeWorkspaceData, String> {
+    let workspace_records = state.store.list_workspace_sites().unwrap_or_default();
+    let custom_scan_roots = state.store.list_scan_roots().unwrap_or_default();
+    let mut all_scan_roots = get_default_scan_roots();
+    for cr in custom_scan_roots {
+        if !all_scan_roots.contains(&cr) {
+            all_scan_roots.push(cr);
+        }
+    }
+
+    let discovered_raw = discover_git_repositories(&all_scan_roots, 3);
+
+    let mut pinned_sites = Vec::new();
+    let mut recent_sites = Vec::new();
+    let mut discovered_sites = Vec::new();
+
+    let pinned_paths: Vec<PathBuf> = workspace_records
+        .iter()
+        .filter(|w| w.is_pinned)
+        .map(|w| w.site_path.clone())
+        .collect();
+
+    for d in discovered_raw {
+        let notes_count = state.store.count_field_notes(&d.path).unwrap_or(0);
+        let mut info = d;
+        info.field_notes_count = notes_count;
+        info.is_pinned = pinned_paths.contains(&info.path);
+
+        if info.is_pinned {
+            pinned_sites.push(info.clone());
+        }
+
+        let is_recent = workspace_records.iter().any(|r| r.site_path == info.path);
+        if is_recent {
+            recent_sites.push(info.clone());
+        } else {
+            discovered_sites.push(info);
+        }
+    }
+
+    Ok(HomeWorkspaceData {
+        pinned_sites,
+        recent_sites,
+        discovered_sites,
+        scan_roots: all_scan_roots.iter().map(|p| p.to_string_lossy().to_string()).collect(),
+    })
+}
+
+#[tauri::command]
+fn toggle_pin_site(site_path: String, state: State<'_, AppState>) -> Result<bool, String> {
+    let p = PathBuf::from(&site_path);
+    state.store.toggle_pin_site(&p).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn add_scan_root(path: String, state: State<'_, AppState>) -> Result<Vec<String>, String> {
+    let p = PathBuf::from(&path);
+    state.store.add_scan_root(&p).map_err(|e| e.to_string())?;
+    let mut roots = get_default_scan_roots();
+    for r in state.store.list_scan_roots().unwrap_or_default() {
+        if !roots.contains(&r) {
+            roots.push(r);
+        }
+    }
+    Ok(roots.iter().map(|r| r.to_string_lossy().to_string()).collect())
 }
 
 #[tauri::command]
@@ -315,6 +395,9 @@ fn main() {
         .manage(app_state)
         .invoke_handler(tauri::generate_handler![
             open_site,
+            get_home_workspace,
+            toggle_pin_site,
+            add_scan_root,
             list_recent_sites,
             read_file_content,
             preview_payload,

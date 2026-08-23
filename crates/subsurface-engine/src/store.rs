@@ -35,6 +35,14 @@ pub struct FieldNote {
     pub finding: Finding,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct WorkspaceSiteRecord {
+    pub site_path: PathBuf,
+    pub name: String,
+    pub is_pinned: bool,
+    pub last_opened: String,
+}
+
 pub struct SqliteStore {
     conn: Mutex<Connection>,
 }
@@ -88,9 +96,110 @@ impl SqliteStore {
                 created_at TEXT NOT NULL,
                 finding_json TEXT NOT NULL,
                 PRIMARY KEY (site_path, file_path, line_start, line_end)
+            );
+            
+            CREATE TABLE IF NOT EXISTS workspace_sites (
+                site_path TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                is_pinned INTEGER NOT NULL DEFAULT 0,
+                last_opened TEXT NOT NULL
+            );
+            
+            CREATE TABLE IF NOT EXISTS scan_roots (
+                path TEXT PRIMARY KEY
             );",
         )?;
         Ok(())
+    }
+
+    pub fn record_site_opened(&self, site_path: &Path, name: &str) -> Result<(), StoreError> {
+        let path_str = site_path.to_string_lossy().to_string();
+        let now = Utc::now().to_rfc3339();
+        let conn = self.conn.lock().map_err(|_| StoreError::Lock)?;
+        conn.execute(
+            "INSERT INTO workspace_sites (site_path, name, is_pinned, last_opened)
+             VALUES (?1, ?2, 0, ?3)
+             ON CONFLICT(site_path) DO UPDATE SET last_opened = ?3, name = ?2",
+            params![path_str, name, now],
+        )?;
+        Ok(())
+    }
+
+    pub fn toggle_pin_site(&self, site_path: &Path) -> Result<bool, StoreError> {
+        let path_str = site_path.to_string_lossy().to_string();
+        let conn = self.conn.lock().map_err(|_| StoreError::Lock)?;
+        
+        let is_pinned: bool;
+        let mut stmt = conn.prepare("SELECT is_pinned FROM workspace_sites WHERE site_path = ?1")?;
+        let mut rows = stmt.query(params![path_str])?;
+        if let Some(row) = rows.next()? {
+            let current: i32 = row.get(0)?;
+            is_pinned = current == 0;
+            conn.execute(
+                "UPDATE workspace_sites SET is_pinned = ?1 WHERE site_path = ?2",
+                params![if is_pinned { 1 } else { 0 }, path_str],
+            )?;
+        } else {
+            let name = site_path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| "repo".to_string());
+            let now = Utc::now().to_rfc3339();
+            is_pinned = true;
+            conn.execute(
+                "INSERT INTO workspace_sites (site_path, name, is_pinned, last_opened) VALUES (?1, ?2, 1, ?3)",
+                params![path_str, name, now],
+            )?;
+        }
+        Ok(is_pinned)
+    }
+
+    pub fn list_workspace_sites(&self) -> Result<Vec<WorkspaceSiteRecord>, StoreError> {
+        let conn = self.conn.lock().map_err(|_| StoreError::Lock)?;
+        let mut stmt = conn.prepare(
+            "SELECT site_path, name, is_pinned, last_opened FROM workspace_sites ORDER BY is_pinned DESC, last_opened DESC"
+        )?;
+
+        let rows = stmt.query_map([], |row| {
+            let p: String = row.get(0)?;
+            let name: String = row.get(1)?;
+            let pinned_int: i32 = row.get(2)?;
+            let last_opened: String = row.get(3)?;
+            Ok(WorkspaceSiteRecord {
+                site_path: PathBuf::from(p),
+                name,
+                is_pinned: pinned_int != 0,
+                last_opened,
+            })
+        })?;
+
+        let mut list = Vec::new();
+        for r in rows {
+            list.push(r?);
+        }
+        Ok(list)
+    }
+
+    pub fn add_scan_root(&self, path: &Path) -> Result<(), StoreError> {
+        let path_str = path.to_string_lossy().to_string();
+        let conn = self.conn.lock().map_err(|_| StoreError::Lock)?;
+        conn.execute(
+            "INSERT OR IGNORE INTO scan_roots (path) VALUES (?1)",
+            params![path_str],
+        )?;
+        Ok(())
+    }
+
+    pub fn list_scan_roots(&self) -> Result<Vec<PathBuf>, StoreError> {
+        let conn = self.conn.lock().map_err(|_| StoreError::Lock)?;
+        let mut stmt = conn.prepare("SELECT path FROM scan_roots")?;
+        let rows = stmt.query_map([], |row| {
+            let p: String = row.get(0)?;
+            Ok(PathBuf::from(p))
+        })?;
+
+        let mut list = Vec::new();
+        for r in rows {
+            list.push(r?);
+        }
+        Ok(list)
     }
 
     pub fn save_field_note(
@@ -252,6 +361,14 @@ impl SqliteStore {
                     || n.finding.why.rationale.to_lowercase().contains(&q)
             })
             .collect())
+    }
+
+    pub fn count_field_notes(&self, site_path: &Path) -> Result<usize, StoreError> {
+        let site_str = site_path.to_string_lossy().to_string();
+        let conn = self.conn.lock().map_err(|_| StoreError::Lock)?;
+        let mut stmt = conn.prepare("SELECT COUNT(*) FROM field_notes WHERE site_path = ?1")?;
+        let count: i64 = stmt.query_row(params![site_str], |r| r.get(0))?;
+        Ok(count as usize)
     }
 
     pub fn delete_field_note(&self, id: &str) -> Result<bool, StoreError> {

@@ -10,7 +10,7 @@
       --bg-panel: #161b22;
       --bg-panel-header: #1f242c;
       --bg-card: #21262d;
-      --bg-card-hover: #282e36;
+      --bg-card-hover: #292e37;
       --border-color: #30363d;
       --text-primary: #f0f6fc;
       --text-secondary: #8b949e;
@@ -50,6 +50,7 @@
       justify-content: space-between;
       gap: 12px;
       flex-shrink: 0;
+      height: 48px;
     }
 
     .brand {
@@ -59,6 +60,7 @@
       display: flex;
       align-items: center;
       gap: 8px;
+      cursor: pointer;
     }
 
     .brand-tag {
@@ -70,12 +72,44 @@
       font-weight: normal;
     }
 
+    .nav-tabs {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .nav-btn {
+      background: transparent;
+      border: 1px solid transparent;
+      color: var(--text-secondary);
+      padding: 5px 12px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .nav-btn:hover {
+      background: var(--bg-card);
+      color: var(--text-primary);
+    }
+
+    .nav-btn.active {
+      background: #1f2b3e;
+      color: var(--accent-blue);
+      border-color: rgba(56, 139, 253, 0.4);
+      font-weight: 600;
+    }
+
     .header-center {
       display: flex;
       align-items: center;
       gap: 8px;
       flex: 1;
-      max-width: 650px;
+      max-width: 500px;
     }
 
     input[type="text"], input[type="password"], input[type="number"], select {
@@ -122,6 +156,11 @@
       background: #388bfd;
     }
 
+    button.small {
+      padding: 4px 10px;
+      font-size: 11px;
+    }
+
     .provider-pill {
       background: #1f2b3e;
       border: 1px solid rgba(56, 139, 253, 0.4);
@@ -140,11 +179,144 @@
       background: #27374f;
     }
 
-    .container {
+    /* Views */
+    .view-container {
+      flex: 1;
+      height: calc(100vh - 48px);
+      overflow: hidden;
+      display: none;
+    }
+
+    .view-container.active {
+      display: flex;
+    }
+
+    /* Home Workspace View */
+    .home-workspace {
+      flex: 1;
+      background: var(--bg-dark);
+      flex-direction: column;
+      overflow-y: auto;
+      padding: 24px 36px;
+    }
+
+    .home-hero {
+      margin-bottom: 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      border-bottom: 1px solid var(--border-color);
+      padding-bottom: 18px;
+    }
+
+    .workspace-section {
+      margin-bottom: 32px;
+    }
+
+    .workspace-section-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .project-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+      gap: 14px;
+    }
+
+    .project-card {
+      background: var(--bg-panel);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      transition: all 0.15s ease;
+      cursor: pointer;
+      position: relative;
+    }
+
+    .project-card:hover {
+      background: var(--bg-card-hover);
+      border-color: #58a6ff;
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    }
+
+    .project-card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 8px;
+    }
+
+    .project-name {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--text-primary);
+      word-break: break-all;
+    }
+
+    .pin-btn {
+      background: transparent;
+      border: none;
+      font-size: 16px;
+      cursor: pointer;
+      color: var(--text-muted);
+      padding: 2px;
+    }
+
+    .pin-btn.pinned {
+      color: var(--accent-amber);
+    }
+
+    .project-path {
+      font-family: var(--font-code);
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-bottom: 12px;
+      word-break: break-all;
+    }
+
+    .project-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-bottom: 14px;
+    }
+
+    .meta-tag {
+      background: #1c2027;
+      border: 1px solid var(--border-color);
+      color: var(--text-secondary);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-family: var(--font-code);
+    }
+
+    .project-actions {
+      display: flex;
+      gap: 8px;
+      border-top: 1px solid rgba(48, 54, 61, 0.6);
+      padding-top: 12px;
+      margin-top: 4px;
+    }
+
+    /* 3-Pane Explorer View */
+    .explorer-container {
       display: grid;
       grid-template-columns: 260px 1fr 440px;
       flex: 1;
-      height: calc(100vh - 49px);
+      height: 100%;
       overflow: hidden;
     }
 
@@ -177,7 +349,6 @@
       padding: 12px;
     }
 
-    /* Repository Pane */
     .file-tree {
       list-style: none;
     }
@@ -205,7 +376,6 @@
       font-weight: 600;
     }
 
-    /* Code Pane */
     .code-viewer-container {
       flex: 1;
       display: flex;
@@ -262,7 +432,6 @@
       flex: 1;
     }
 
-    /* Archaeology Pane */
     .archaeology-panel {
       border-right: none;
       background: #12161d;
@@ -484,65 +653,129 @@
 </head>
 <body>
   <header>
-    <div class="brand">
-      <span>⚓ Subsurface</span>
-      <span class="brand-tag">v1.0</span>
+    <div style="display: flex; align-items: center; gap: 16px;">
+      <div class="brand" onclick="showHomeView()">
+        <span>⚓ Subsurface</span>
+        <span class="brand-tag">v1.0</span>
+      </div>
+      <div class="nav-tabs">
+        <button class="nav-btn active" id="btnNavHome" onclick="showHomeView()">
+          <span>🏠 Workspace</span>
+        </button>
+        <button class="nav-btn" id="btnNavCode" onclick="showCodeView()">
+          <span>🔍 Code Explorer</span>
+        </button>
+      </div>
     </div>
+
     <div class="header-center">
-      <input type="text" id="sitePathInput" placeholder="Site path (e.g. /Users/.../subsurface)" style="flex: 1;" value="" />
-      <button class="primary" onclick="openSiteFromInput()">Open Site</button>
-      <button onclick="openSiteReportModal()">📊 Site Report</button>
+      <span id="activeProjectBreadcrumb" style="font-family: var(--font-code); font-size: 11px; color: var(--text-muted); text-overflow: ellipsis; overflow: hidden; white-space: nowrap;">
+        No active repository
+      </span>
     </div>
+
     <div style="display: flex; align-items: center; gap: 10px;">
+      <button class="small" onclick="openSiteReportModal()">📊 Site Report</button>
       <div id="activeModelPill" class="provider-pill" onclick="openSettingsModal()">
         <span>⚡ gpt-4o</span>
       </div>
-      <button onclick="openSettingsModal()">⚙️ Settings</button>
+      <button class="small" onclick="openSettingsModal()">⚙️ Settings</button>
     </div>
   </header>
 
-  <div class="container">
-    <!-- Panel 1: Repository Files -->
-    <div class="panel">
-      <div class="panel-header">
-        <span>Repository Files</span>
-        <span id="fileCount" style="font-size: 10px; color: var(--text-muted);">0 files</span>
+  <!-- View 1: Home Workspace -->
+  <div class="view-container home-workspace active" id="homeView">
+    <div class="home-hero">
+      <div>
+        <h1 style="font-size: 20px; font-weight: 700; margin-bottom: 4px;">Repository Workspace</h1>
+        <div style="color: var(--text-secondary); font-size: 13px;">
+          Choose a repository to excavate, inspect change rationale, or run repository-wide archaeological reports.
+        </div>
       </div>
-      <div class="panel-body">
-        <input type="text" id="fileFilter" placeholder="Filter files..." style="width: 100%; margin-bottom: 8px;" oninput="filterFiles()" />
-        <div id="siteMeta" style="font-size: 11px; color: var(--text-muted); margin-bottom: 8px;"></div>
-        <ul class="file-tree" id="fileList">
-          <li style="color: var(--text-muted); padding: 8px;">No Site opened. Enter a repository path above and click Open Site.</li>
-        </ul>
+      <div style="display: flex; gap: 8px;">
+        <input type="text" id="manualSitePath" placeholder="Enter /path/to/repo..." style="width: 280px;" />
+        <button class="primary" onclick="openManualPath()">Open Path</button>
+        <button onclick="refreshHomeWorkspace()">🔄 Refresh</button>
       </div>
     </div>
 
-    <!-- Panel 2: Code Viewer -->
-    <div class="code-viewer-container">
-      <div class="code-toolbar">
-        <div style="font-family: var(--font-code); font-size: 12px; color: var(--text-secondary);" id="currentFilePath">No file selected</div>
-        <div style="display: flex; align-items: center; gap: 8px;">
-          <span style="font-size: 11px; color: var(--text-muted);" id="selectionLabel">Lines: None</span>
-          <button onclick="previewPayload()">Preview Payload</button>
-          <button class="primary" id="excavateBtn" onclick="runExcavate()">Excavate</button>
-        </div>
+    <div style="margin-bottom: 20px;">
+      <input type="text" id="workspaceSearch" placeholder="Search repositories by name or path..." style="width: 100%; max-width: 500px;" oninput="filterWorkspaceCards()" />
+    </div>
+
+    <!-- Section: Pinned Projects -->
+    <div class="workspace-section" id="sectionPinned" style="display: none;">
+      <div class="workspace-section-title">
+        <span>⭐ Pinned Repositories</span>
       </div>
-      <div class="code-content" id="codeContainer">
-        <div style="padding: 32px; color: var(--text-muted); text-align: center;">
-          Select a file from the repository to inspect code, then select lines to Excavate.
-        </div>
+      <div class="project-grid" id="gridPinned"></div>
+    </div>
+
+    <!-- Section: Recently Excavated -->
+    <div class="workspace-section" id="sectionRecent">
+      <div class="workspace-section-title">
+        <span>🕒 Recently Excavated Sites</span>
+      </div>
+      <div class="project-grid" id="gridRecent">
+        <div style="color: var(--text-muted); font-size: 12px;">Loading recent sites...</div>
       </div>
     </div>
 
-    <!-- Panel 3: Archaeology / Finding -->
-    <div class="panel archaeology-panel">
-      <div class="panel-header">
-        <span>Archaeology</span>
-        <span id="confidenceBadge" class="badge badge-none">No Selection</span>
+    <!-- Section: Discovered Repositories -->
+    <div class="workspace-section" id="sectionDiscovered">
+      <div class="workspace-section-title">
+        <span>🔍 Discovered Repositories</span>
+        <span id="scanRootsLabel" style="font-size: 11px; color: var(--text-muted); font-weight: normal; font-family: var(--font-code);"></span>
       </div>
-      <div class="panel-body" id="archaeologyBody">
-        <div style="color: var(--text-muted); text-align: center; margin-top: 40px; line-height: 1.6;">
-          Select a line range in the code viewer and press <strong>Excavate</strong> to uncover why it exists.
+      <div class="project-grid" id="gridDiscovered"></div>
+    </div>
+  </div>
+
+  <!-- View 2: 3-Pane Explorer -->
+  <div class="view-container" id="codeView">
+    <div class="explorer-container">
+      <!-- Panel 1: Repository Files -->
+      <div class="panel">
+        <div class="panel-header">
+          <span>Files</span>
+          <span id="fileCount" style="font-size: 10px; color: var(--text-muted);">0 files</span>
+        </div>
+        <div class="panel-body">
+          <input type="text" id="fileFilter" placeholder="Filter files..." style="width: 100%; margin-bottom: 8px;" oninput="filterFiles()" />
+          <div id="siteMeta" style="font-size: 11px; color: var(--text-muted); margin-bottom: 8px;"></div>
+          <ul class="file-tree" id="fileList">
+            <li style="color: var(--text-muted); padding: 8px;">No Site opened. Return to Home Workspace to select a repository.</li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- Panel 2: Code Viewer -->
+      <div class="code-viewer-container">
+        <div class="code-toolbar">
+          <div style="font-family: var(--font-code); font-size: 12px; color: var(--text-secondary);" id="currentFilePath">No file selected</div>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="font-size: 11px; color: var(--text-muted);" id="selectionLabel">Lines: None</span>
+            <button class="small" onclick="previewPayload()">Preview Payload</button>
+            <button class="primary small" id="excavateBtn" onclick="runExcavate()">Excavate</button>
+          </div>
+        </div>
+        <div class="code-content" id="codeContainer">
+          <div style="padding: 32px; color: var(--text-muted); text-align: center;">
+            Select a file from the repository to inspect code, then select lines to Excavate.
+          </div>
+        </div>
+      </div>
+
+      <!-- Panel 3: Archaeology / Finding -->
+      <div class="panel archaeology-panel">
+        <div class="panel-header">
+          <span>Archaeology</span>
+          <span id="confidenceBadge" class="badge badge-none">No Selection</span>
+        </div>
+        <div class="panel-body" id="archaeologyBody">
+          <div style="color: var(--text-muted); text-align: center; margin-top: 40px; line-height: 1.6;">
+            Select a line range in the code viewer and press <strong>Excavate</strong> to uncover why it exists.
+          </div>
         </div>
       </div>
     </div>
@@ -693,6 +926,7 @@
     let activeSettings = null;
     let currentReport = null;
     let activeCategoryFilter = "All";
+    let homeWorkspaceData = null;
 
     // Robust Tauri IPC helper
     async function invokeBackend(cmd, args = {}) {
@@ -715,11 +949,6 @@
     }
 
     window.addEventListener("DOMContentLoaded", async () => {
-      const input = document.getElementById("sitePathInput");
-      if (!input.value) {
-        input.value = "/Users/vraj/Work/Projects/subsurface";
-      }
-
       // Load settings
       try {
         const settings = await invokeBackend("get_provider_settings");
@@ -739,27 +968,130 @@
         console.log("Settings init error:", e);
       }
 
-      if (input.value) {
-        openSiteFromInput();
-      }
+      // Load Home Workspace
+      await refreshHomeWorkspace();
     });
 
-    function updateActiveModelBadge(settings) {
-      const pill = document.getElementById("activeModelPill");
-      if (settings.offline_mode) {
-        pill.innerHTML = `<span>🔒 Offline Mode (Git Only)</span>`;
-      } else {
-        pill.innerHTML = `<span>⚡ ${escapeHtml(settings.model || 'gpt-4o')}</span>`;
+    function showHomeView() {
+      document.getElementById("homeView").classList.add("active");
+      document.getElementById("codeView").classList.remove("active");
+      document.getElementById("btnNavHome").classList.add("active");
+      document.getElementById("btnNavCode").classList.remove("active");
+    }
+
+    function showCodeView() {
+      document.getElementById("homeView").classList.remove("active");
+      document.getElementById("codeView").classList.add("active");
+      document.getElementById("btnNavHome").classList.remove("active");
+      document.getElementById("btnNavCode").classList.add("active");
+    }
+
+    async function refreshHomeWorkspace() {
+      try {
+        const data = await invokeBackend("get_home_workspace");
+        if (data) {
+          homeWorkspaceData = data;
+          renderHomeWorkspace(data);
+        }
+      } catch (err) {
+        console.error("Failed to load workspace:", err);
       }
     }
 
-    async function openSiteFromInput() {
-      const input = document.getElementById("sitePathInput").value.trim();
-      if (!input) return;
+    function renderHomeWorkspace(data) {
+      if (data.scan_roots && data.scan_roots.length > 0) {
+        document.getElementById("scanRootsLabel").innerText = `Scanned in: ${data.scan_roots.join(", ")}`;
+      }
+
+      // 1. Pinned
+      const pinnedSection = document.getElementById("sectionPinned");
+      const pinnedGrid = document.getElementById("gridPinned");
+      if (data.pinned_sites && data.pinned_sites.length > 0) {
+        pinnedSection.style.display = "block";
+        pinnedGrid.innerHTML = data.pinned_sites.map(s => renderProjectCardHtml(s)).join("");
+      } else {
+        pinnedSection.style.display = "none";
+      }
+
+      // 2. Recent
+      const recentGrid = document.getElementById("gridRecent");
+      if (data.recent_sites && data.recent_sites.length > 0) {
+        recentGrid.innerHTML = data.recent_sites.map(s => renderProjectCardHtml(s)).join("");
+      } else {
+        recentGrid.innerHTML = `<div style="color: var(--text-muted); font-size: 12px;">No recently excavated repositories. Select one from Discovered below or enter a path.</div>`;
+      }
+
+      // 3. Discovered
+      const discGrid = document.getElementById("gridDiscovered");
+      if (data.discovered_sites && data.discovered_sites.length > 0) {
+        discGrid.innerHTML = data.discovered_sites.map(s => renderProjectCardHtml(s)).join("");
+      } else {
+        discGrid.innerHTML = `<div style="color: var(--text-muted); font-size: 12px;">No other repositories discovered in scan roots.</div>`;
+      }
+    }
+
+    function renderProjectCardHtml(site) {
+      const isPinned = !!site.is_pinned;
+      const headShort = site.head_commit ? site.head_commit.substring(0, 7) : 'None';
+      const notesLabel = site.field_notes_count > 0 ? `📝 ${site.field_notes_count} Notes` : '📝 0 Notes';
+      const pathEscaped = escapeHtml(site.path);
+
+      return `
+        <div class="project-card" onclick="openProjectFromCard('${pathEscaped}')">
+          <div>
+            <div class="project-card-header">
+              <span class="project-name">${escapeHtml(site.name)}</span>
+              <button class="pin-btn ${isPinned ? 'pinned' : ''}" onclick="event.stopPropagation(); togglePin('${pathEscaped}')" title="${isPinned ? 'Unpin' : 'Pin'}">
+                ${isPinned ? '★' : '☆'}
+              </button>
+            </div>
+            <div class="project-path">${pathEscaped}</div>
+            <div class="project-tags">
+              <span class="meta-tag">HEAD ${headShort}</span>
+              <span class="meta-tag">${site.total_commits_estimate} commits</span>
+              <span class="meta-tag">${notesLabel}</span>
+              ${site.is_shallow ? '<span class="meta-tag" style="color: #e3b341;">⚠️ Shallow</span>' : ''}
+            </div>
+          </div>
+          <div class="project-actions" onclick="event.stopPropagation()">
+            <button class="primary small" onclick="openProjectFromCard('${pathEscaped}')">Open Code</button>
+            <button class="small" onclick="openProjectAndReport('${pathEscaped}')">📊 Site Report</button>
+          </div>
+        </div>
+      `;
+    }
+
+    async function togglePin(path) {
       try {
-        const site = await invokeBackend("open_site", { path: input });
+        await invokeBackend("toggle_pin_site", { sitePath: path });
+        await refreshHomeWorkspace();
+      } catch (err) {
+        alert("Failed to toggle pin: " + err);
+      }
+    }
+
+    async function openProjectFromCard(path) {
+      await loadProject(path);
+      showCodeView();
+    }
+
+    async function openProjectAndReport(path) {
+      await loadProject(path);
+      openSiteReportModal();
+    }
+
+    async function openManualPath() {
+      const p = document.getElementById("manualSitePath").value.trim();
+      if (!p) return;
+      await openProjectFromCard(p);
+    }
+
+    async function loadProject(path) {
+      try {
+        const site = await invokeBackend("open_site", { path: path });
         if (site) {
           currentSite = site;
+          document.getElementById("activeProjectBreadcrumb").innerText = `Active: ${site.root_path}`;
           document.getElementById("siteMeta").innerHTML = `
             <div><strong>HEAD:</strong> ${site.head_commit ? site.head_commit.substring(0, 7) : 'None'} · ${site.total_commits_estimate} commits</div>
             <div>${site.is_shallow ? '⚠️ Shallow clone' : 'Full history'} · ${site.has_remote ? 'Remote configured' : 'Local repository'}</div>
@@ -768,9 +1100,27 @@
           if (site.tracked_files.length > 0) {
             loadFile(site.tracked_files[0]);
           }
+          await refreshHomeWorkspace();
         }
       } catch (err) {
         alert("Failed to open site: " + err);
+      }
+    }
+
+    function filterWorkspaceCards() {
+      const q = document.getElementById("workspaceSearch").value.toLowerCase();
+      document.querySelectorAll(".project-card").forEach(card => {
+        const text = card.innerText.toLowerCase();
+        card.style.display = text.includes(q) ? "flex" : "none";
+      });
+    }
+
+    function updateActiveModelBadge(settings) {
+      const pill = document.getElementById("activeModelPill");
+      if (settings.offline_mode) {
+        pill.innerHTML = `<span>🔒 Offline Mode (Git Only)</span>`;
+      } else {
+        pill.innerHTML = `<span>⚡ ${escapeHtml(settings.model || 'gpt-4o')}</span>`;
       }
     }
 
@@ -1127,7 +1477,7 @@
 
     async function openSiteReportModal() {
       if (!currentSite) {
-        alert("Please open a Site first.");
+        alert("Please select or open a repository first.");
         return;
       }
       document.getElementById("reportModal").classList.add("active");
@@ -1164,7 +1514,6 @@
         });
         currentReport = report;
 
-        // Count categories
         let deadCount = report.entries.filter(e => e.category === "DeadWorkaround").length;
         let noRationaleCount = report.entries.filter(e => e.category === "NoRationale").length;
         let untestedCount = report.entries.filter(e => e.category === "UntestedCode").length;
@@ -1232,6 +1581,7 @@
 
     async function loadAndExcavate(filePath, start, end) {
       closeModal('reportModal');
+      showCodeView();
       await loadFile(filePath);
       selectedStartLine = start;
       selectedEndLine = end;
@@ -1253,6 +1603,7 @@
           userNotes: note
         });
         alert("Field Note saved!");
+        await refreshHomeWorkspace();
       } catch (err) {
         alert("Failed to save note: " + err);
       }
