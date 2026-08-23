@@ -1,7 +1,10 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use std::process::Command;
-use std::time::Duration;
+use std::io::Read;
+use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
+use std::thread;
+use std::time::{Duration, Instant};
 use thiserror::Error;
 
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
@@ -112,6 +115,14 @@ pub struct NativeProvider {
     timeout: Duration,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ModelDiscovery {
+    pub models: Vec<String>,
+    pub selected_model: String,
+    pub model_field_editable: bool,
+    pub error: Option<String>,
+}
+
 impl NativeProvider {
     pub fn new(connection: ProviderConnectionPreferences, api_key: impl Into<String>) -> Self {
         Self {
@@ -124,6 +135,77 @@ impl NativeProvider {
     pub fn with_timeout(mut self, timeout: Duration) -> Self {
         self.timeout = timeout;
         self
+    }
+
+    pub fn discover_models(&self, selected_model: &str) -> ModelDiscovery {
+        match self.fetch_models() {
+            Ok(models) => ModelDiscovery {
+                models,
+                selected_model: selected_model.into(),
+                model_field_editable: true,
+                error: None,
+            },
+            Err(error) => ModelDiscovery {
+                models: Vec::new(),
+                selected_model: selected_model.into(),
+                model_field_editable: true,
+                error: Some(error.to_string()),
+            },
+        }
+    }
+
+    fn fetch_models(&self) -> Result<Vec<String>, ProviderError> {
+        let endpoint = format!("{}/models", self.connection.base_url.trim_end_matches('/'));
+        let client = reqwest::blocking::Client::builder()
+            .timeout(self.timeout)
+            .build()
+            .map_err(|error| ProviderError::Network(error.to_string()))?;
+        let mut request = client.get(endpoint);
+        if !self.api_key.is_empty() {
+            request = request.bearer_auth(&self.api_key);
+        }
+        let response = request.send().map_err(classify_request_error)?;
+        let status = response.status();
+        let response_body = response.text().map_err(classify_request_error)?;
+        if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
+            return Err(ProviderError::Auth(format!("HTTP {status}")));
+        }
+        if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+            return Err(ProviderError::RateLimit(format!("HTTP {status}")));
+        }
+        if !status.is_success() {
+            return Err(ProviderError::Other(format!(
+                "HTTP {status}: {response_body}"
+            )));
+        }
+
+        let response: Value = serde_json::from_str(&response_body)
+            .map_err(|error| ProviderError::MalformedResponse(error.to_string()))?;
+        let entries = response
+            .get("data")
+            .or_else(|| response.get("models"))
+            .and_then(Value::as_array)
+            .ok_or_else(|| {
+                ProviderError::MalformedResponse("model response did not contain a list".into())
+            })?;
+        let mut models: Vec<String> = entries
+            .iter()
+            .filter_map(|entry| {
+                entry
+                    .get("id")
+                    .or_else(|| entry.get("name"))
+                    .and_then(Value::as_str)
+                    .map(str::to_owned)
+            })
+            .collect();
+        models.sort();
+        models.dedup();
+        if models.is_empty() && !entries.is_empty() {
+            return Err(ProviderError::MalformedResponse(
+                "model list entries did not contain id or name".into(),
+            ));
+        }
+        Ok(models)
     }
 }
 
@@ -167,21 +249,9 @@ impl Provider for NativeProvider {
                     .header("anthropic-version", "2023-06-01");
             }
         }
-        let response = request.send().map_err(|error| {
-            if error.is_timeout() {
-                ProviderError::Timeout(error.to_string())
-            } else {
-                ProviderError::Network(error.to_string())
-            }
-        })?;
+        let response = request.send().map_err(classify_request_error)?;
         let status = response.status();
-        let response_body = response.text().map_err(|error| {
-            if error.is_timeout() {
-                ProviderError::Timeout(error.to_string())
-            } else {
-                ProviderError::Network(error.to_string())
-            }
-        })?;
+        let response_body = response.text().map_err(classify_request_error)?;
 
         if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
             return Err(ProviderError::Auth(format!("HTTP {status}")));
@@ -219,6 +289,112 @@ impl Provider for NativeProvider {
     }
 }
 
+fn classify_request_error(error: reqwest::Error) -> ProviderError {
+    if error.is_timeout() {
+        ProviderError::Timeout(error.to_string())
+    } else {
+        ProviderError::Network(error.to_string())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OpenCodeBridge {
+    executable: PathBuf,
+    pub version: String,
+}
+
+impl OpenCodeBridge {
+    pub fn detect() -> Option<Self> {
+        Self::from_executable("opencode").ok()
+    }
+
+    pub fn from_executable(executable: impl AsRef<Path>) -> Result<Self, String> {
+        let executable = executable.as_ref().to_path_buf();
+        let version = run_bounded_command(&executable, &["--version"])?;
+        Ok(Self {
+            executable,
+            version: version.trim().to_owned(),
+        })
+    }
+
+    pub fn discover_models(&self, provider: Option<&str>) -> Result<Vec<String>, String> {
+        let mut args = vec!["models"];
+        if let Some(provider) = provider {
+            args.push(provider);
+        }
+        let output = run_bounded_command(&self.executable, &args)?;
+        let mut models: Vec<String> = output
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.is_empty())
+            .map(str::to_owned)
+            .collect();
+        models.sort();
+        models.dedup();
+        Ok(models)
+    }
+}
+
+fn run_bounded_command(executable: &Path, args: &[&str]) -> Result<String, String> {
+    const MAX_OUTPUT_BYTES: usize = 1024 * 1024;
+    const TIMEOUT: Duration = Duration::from_secs(5);
+
+    let mut child = Command::new(executable)
+        .args(args)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|error| error.to_string())?;
+    let stdout = child.stdout.take().ok_or("OpenCode stdout unavailable")?;
+    let stderr = child.stderr.take().ok_or("OpenCode stderr unavailable")?;
+    let stdout_reader = thread::spawn(move || read_capped(stdout, MAX_OUTPUT_BYTES));
+    let stderr_reader = thread::spawn(move || read_capped(stderr, MAX_OUTPUT_BYTES));
+    let started = Instant::now();
+
+    let status = loop {
+        if let Some(status) = child.try_wait().map_err(|error| error.to_string())? {
+            break status;
+        }
+        if started.elapsed() >= TIMEOUT {
+            let _ = child.kill();
+            let _ = child.wait();
+            let _ = stdout_reader.join();
+            let _ = stderr_reader.join();
+            return Err("OpenCode command timed out after 5 seconds".into());
+        }
+        thread::sleep(Duration::from_millis(10));
+    };
+
+    let (stdout, stdout_truncated) = stdout_reader
+        .join()
+        .map_err(|_| "OpenCode stdout reader failed")?;
+    let (stderr, stderr_truncated) = stderr_reader
+        .join()
+        .map_err(|_| "OpenCode stderr reader failed")?;
+    if stdout_truncated || stderr_truncated {
+        return Err("OpenCode command output exceeded 1 MiB".into());
+    }
+    if !status.success() {
+        return Err(String::from_utf8_lossy(&stderr).trim().to_owned());
+    }
+    String::from_utf8(stdout).map_err(|error| error.to_string())
+}
+
+fn read_capped(mut reader: impl Read, limit: usize) -> (Vec<u8>, bool) {
+    let mut kept = Vec::new();
+    let mut chunk = [0; 8192];
+    let mut truncated = false;
+    while let Ok(read) = reader.read(&mut chunk) {
+        if read == 0 {
+            break;
+        }
+        let remaining = limit.saturating_sub(kept.len());
+        kept.extend_from_slice(&chunk[..read.min(remaining)]);
+        truncated |= read > remaining;
+    }
+    (kept, truncated)
+}
+
 /// A deterministic, offline test fake that returns a canned response.
 #[derive(Debug, Clone, Default)]
 pub struct FakeProvider {
@@ -250,7 +426,7 @@ pub struct ProviderPreset {
 pub const PRESET_OPENAI: ProviderPreset = ProviderPreset {
     name: "OpenAI",
     default_base_url: "https://api.openai.com/v1",
-    suggested_models: &["gpt-4o", "gpt-4o-mini", "o1", "o3-mini"],
+    suggested_models: &[],
 };
 
 pub const PRESET_XAI: ProviderPreset = ProviderPreset {
@@ -264,11 +440,7 @@ pub const PRESET_GROK: ProviderPreset = PRESET_XAI;
 pub const PRESET_OPENROUTER: ProviderPreset = ProviderPreset {
     name: "OpenRouter",
     default_base_url: "https://openrouter.ai/api/v1",
-    suggested_models: &[
-        "anthropic/claude-3.5-sonnet",
-        "google/gemini-flash-1.5",
-        "deepseek/deepseek-chat",
-    ],
+    suggested_models: &[],
 };
 
 pub const PRESET_OPENCODE_ZEN: ProviderPreset = ProviderPreset {
@@ -292,7 +464,7 @@ pub const PRESET_OPENCODE_GO: ProviderPreset = ProviderPreset {
 pub const PRESET_OLLAMA: ProviderPreset = ProviderPreset {
     name: "Ollama (Local)",
     default_base_url: "http://localhost:11434/v1",
-    suggested_models: &["llama3.2", "qwen2.5-coder", "mistral"],
+    suggested_models: &[],
 };
 
 pub const PRESET_CUSTOM: ProviderPreset = ProviderPreset {

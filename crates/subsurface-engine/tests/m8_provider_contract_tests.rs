@@ -1,13 +1,15 @@
 mod support;
 
 use std::collections::HashMap;
+use std::fs;
 use std::io::{Read, Write};
 use std::net::TcpStream;
+use std::os::unix::fs::PermissionsExt;
 use std::time::Duration;
 
 use subsurface_engine::provider::{
-    KeychainStore, NativeProvider, Provider, ProviderConnectionPreferences, ProviderError,
-    ProviderKind, ProviderProtocol,
+    KeychainStore, NativeProvider, OpenCodeBridge, Provider, ProviderConnectionPreferences,
+    ProviderError, ProviderKind, ProviderProtocol,
 };
 use subsurface_engine::store::SqliteStore;
 use support::{LocalHttpFake, StubResponse};
@@ -184,6 +186,64 @@ fn native_provider_distinguishes_failures() {
         provider.complete("four"),
         Err(ProviderError::Timeout(_))
     ));
+}
+
+#[test]
+fn model_discovery_failure_keeps_model_field_editable() {
+    let server = LocalHttpFake::start_with(vec![StubResponse::json(
+        500,
+        r#"{"error":"catalog unavailable"}"#,
+    )]);
+    let provider = NativeProvider::new(
+        connection(server.address(), ProviderProtocol::Responses),
+        "key",
+    );
+
+    let discovery = provider.discover_models("manually-entered-model");
+
+    assert!(discovery.models.is_empty());
+    assert_eq!(discovery.selected_model, "manually-entered-model");
+    assert!(discovery.model_field_editable);
+    assert!(discovery
+        .error
+        .expect("actionable error")
+        .contains("HTTP 500"));
+}
+
+#[test]
+fn model_discovery_and_optional_opencode_bridge_use_live_catalogs() {
+    let server = LocalHttpFake::start_with(vec![StubResponse::json(
+        200,
+        r#"{"data":[{"id":"model-b"},{"id":"model-a"},{"id":"model-a"}]}"#,
+    )]);
+    let provider = NativeProvider::new(
+        connection(server.address(), ProviderProtocol::Responses),
+        "key",
+    );
+    let discovery = provider.discover_models("manual-model-not-in-catalog");
+    assert_eq!(discovery.models, vec!["model-a", "model-b"]);
+    assert_eq!(discovery.selected_model, "manual-model-not-in-catalog");
+    assert!(discovery.error.is_none());
+
+    let temp = tempfile::tempdir().expect("tempdir");
+    let executable = temp.path().join("opencode");
+    fs::write(
+        &executable,
+        "#!/bin/sh\nif [ \"$1\" = \"--version\" ]; then echo 1.2.3; else printf 'opencode/model-b\\nopencode/model-a\\n'; fi\n",
+    )
+    .expect("write OpenCode fake");
+    let mut permissions = fs::metadata(&executable).expect("metadata").permissions();
+    permissions.set_mode(0o700);
+    fs::set_permissions(&executable, permissions).expect("make OpenCode fake executable");
+
+    let bridge = OpenCodeBridge::from_executable(&executable).expect("detect OpenCode");
+    assert_eq!(bridge.version, "1.2.3");
+    assert_eq!(
+        bridge
+            .discover_models(Some("opencode"))
+            .expect("bridge models"),
+        vec!["opencode/model-a", "opencode/model-b"]
+    );
 }
 
 fn connection(
