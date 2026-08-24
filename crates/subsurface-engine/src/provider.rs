@@ -1,8 +1,10 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use std::collections::BTreeSet;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
 use thiserror::Error;
@@ -19,6 +21,10 @@ pub enum ProviderError {
     Timeout(String),
     #[error("Malformed provider response: {0}")]
     MalformedResponse(String),
+    #[error("Offline mode blocks provider requests")]
+    Offline,
+    #[error("Review and allow this payload before sending it")]
+    ConsentRequired,
     #[error("Provider error: {0}")]
     Other(String),
 }
@@ -26,6 +32,123 @@ pub enum ProviderError {
 /// The single trait for inference providers.
 pub trait Provider: Send + Sync {
     fn complete(&self, prompt: &str) -> Result<String, ProviderError>;
+
+    fn request_payload(&self, prompt: &str) -> Value {
+        Value::String(prompt.to_owned())
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ConsentDecision {
+    AllowOnce,
+    AlwaysAllowProject,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PayloadPreview {
+    pub project_path: PathBuf,
+    pub payload: Value,
+    pub payload_bytes: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct OutboundPolicy {
+    offline: bool,
+    always_allowed_projects: BTreeSet<PathBuf>,
+}
+
+impl OutboundPolicy {
+    pub fn new(offline: bool) -> Self {
+        Self {
+            offline,
+            always_allowed_projects: BTreeSet::new(),
+        }
+    }
+
+    pub fn preview(
+        &self,
+        provider: &dyn Provider,
+        project_path: &Path,
+        prompt: &str,
+    ) -> PayloadPreview {
+        let payload = provider.request_payload(prompt);
+        PayloadPreview {
+            project_path: project_path.to_path_buf(),
+            payload_bytes: serde_json::to_vec(&payload).map_or(0, |bytes| bytes.len()),
+            payload,
+        }
+    }
+
+    pub fn set_offline(&mut self, offline: bool) {
+        self.offline = offline;
+    }
+
+    pub fn complete(
+        &mut self,
+        provider: &dyn Provider,
+        project_path: &Path,
+        prompt: &str,
+        decision: Option<ConsentDecision>,
+    ) -> Result<String, ProviderError> {
+        if self.offline {
+            return Err(ProviderError::Offline);
+        }
+        if self.always_allowed_projects.contains(project_path) {
+            return provider.complete(prompt);
+        }
+        match decision {
+            Some(ConsentDecision::AllowOnce) => provider.complete(prompt),
+            Some(ConsentDecision::AlwaysAllowProject) => {
+                self.always_allowed_projects
+                    .insert(project_path.to_path_buf());
+                provider.complete(prompt)
+            }
+            None => Err(ProviderError::ConsentRequired),
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct ConsentProvider {
+    provider: Arc<dyn Provider>,
+    policy: Arc<Mutex<OutboundPolicy>>,
+    project_path: PathBuf,
+    decision: Option<ConsentDecision>,
+}
+
+impl ConsentProvider {
+    pub fn new(
+        provider: Arc<dyn Provider>,
+        policy: Arc<Mutex<OutboundPolicy>>,
+        project_path: impl Into<PathBuf>,
+        decision: Option<ConsentDecision>,
+    ) -> Self {
+        Self {
+            provider,
+            policy,
+            project_path: project_path.into(),
+            decision,
+        }
+    }
+}
+
+impl Provider for ConsentProvider {
+    fn complete(&self, prompt: &str) -> Result<String, ProviderError> {
+        self.policy
+            .lock()
+            .map_err(|_| ProviderError::Other("Outbound policy lock failed".into()))?
+            .complete(
+                self.provider.as_ref(),
+                &self.project_path,
+                prompt,
+                self.decision,
+            )
+    }
+
+    fn request_payload(&self, prompt: &str) -> Value {
+        self.provider.request_payload(prompt)
+    }
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -156,10 +279,7 @@ impl NativeProvider {
 
     fn fetch_models(&self) -> Result<Vec<String>, ProviderError> {
         let endpoint = format!("{}/models", self.connection.base_url.trim_end_matches('/'));
-        let client = reqwest::blocking::Client::builder()
-            .timeout(self.timeout)
-            .build()
-            .map_err(|error| ProviderError::Network(error.to_string()))?;
+        let client = self.client()?;
         let mut request = client.get(endpoint);
         if !self.api_key.is_empty() {
             request = request.bearer_auth(&self.api_key);
@@ -207,6 +327,32 @@ impl NativeProvider {
         }
         Ok(models)
     }
+
+    fn request_body(&self, prompt: &str) -> Value {
+        match self.connection.protocol {
+            ProviderProtocol::ChatCompletions => json!({
+                "model": self.connection.model,
+                "messages": [{"role": "user", "content": prompt}],
+            }),
+            ProviderProtocol::Responses => json!({
+                "model": self.connection.model,
+                "input": prompt,
+            }),
+            ProviderProtocol::Messages => json!({
+                "model": self.connection.model,
+                "max_tokens": 2048,
+                "messages": [{"role": "user", "content": prompt}],
+            }),
+        }
+    }
+
+    fn client(&self) -> Result<reqwest::blocking::Client, ProviderError> {
+        reqwest::blocking::Client::builder()
+            .timeout(self.timeout)
+            .redirect(reqwest::redirect::Policy::none())
+            .build()
+            .map_err(|error| ProviderError::Network(error.to_string()))
+    }
 }
 
 impl Provider for NativeProvider {
@@ -221,25 +367,8 @@ impl Provider for NativeProvider {
                 ProviderProtocol::Messages => "messages",
             }
         );
-        let body = match protocol {
-            ProviderProtocol::ChatCompletions => json!({
-                "model": self.connection.model,
-                "messages": [{"role": "user", "content": prompt}],
-            }),
-            ProviderProtocol::Responses => json!({
-                "model": self.connection.model,
-                "input": prompt,
-            }),
-            ProviderProtocol::Messages => json!({
-                "model": self.connection.model,
-                "max_tokens": 2048,
-                "messages": [{"role": "user", "content": prompt}],
-            }),
-        };
-        let client = reqwest::blocking::Client::builder()
-            .timeout(self.timeout)
-            .build()
-            .map_err(|error| ProviderError::Network(error.to_string()))?;
+        let body = self.request_body(prompt);
+        let client = self.client()?;
         let mut request = client.post(endpoint).json(&body);
         if !self.api_key.is_empty() {
             request = request.bearer_auth(&self.api_key);
@@ -286,6 +415,10 @@ impl Provider for NativeProvider {
         text.map(str::to_owned).ok_or_else(|| {
             ProviderError::MalformedResponse("response did not contain text output".into())
         })
+    }
+
+    fn request_payload(&self, prompt: &str) -> Value {
+        self.request_body(prompt)
     }
 }
 
@@ -578,10 +711,8 @@ impl OpenAICompatibleProvider {
             model: model.into(),
         }
     }
-}
 
-impl Provider for OpenAICompatibleProvider {
-    fn complete(&self, prompt: &str) -> Result<String, ProviderError> {
+    fn native_provider(&self) -> NativeProvider {
         NativeProvider::new(
             ProviderConnectionPreferences {
                 id: "legacy-openai-compatible".into(),
@@ -595,7 +726,16 @@ impl Provider for OpenAICompatibleProvider {
             },
             &self.api_key,
         )
-        .complete(prompt)
+    }
+}
+
+impl Provider for OpenAICompatibleProvider {
+    fn complete(&self, prompt: &str) -> Result<String, ProviderError> {
+        self.native_provider().complete(prompt)
+    }
+
+    fn request_payload(&self, prompt: &str) -> Value {
+        self.native_provider().request_payload(prompt)
     }
 }
 

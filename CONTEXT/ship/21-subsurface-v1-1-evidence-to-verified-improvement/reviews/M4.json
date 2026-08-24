@@ -1,0 +1,23 @@
+{
+  "milestone": "M4",
+  "verdict": "PASS",
+  "reviewer": "Grok 4.6",
+  "range": "M4 working tree based on 2338fd8",
+  "gate": [
+    "five exact m11_opportunity_tests acceptance commands",
+    "cargo test -p subsurface-engine --test m11_opportunity_tests",
+    "cargo test --workspace",
+    "git diff --check"
+  ],
+  "remediated": [
+    "Deterministic detectors force Tooling provenance and test gaps disclose that co-commit evidence is not verified coverage.",
+    "Opportunity impact, verification, expected grade improvement, effort, and age remain separate human-readable ordering fields.",
+    "Project Assessment takes the exact HEAD from an opened Project and the fixture proves Assessment leaves its tree unchanged.",
+    "Invalid transitions retain event history; dismissal branches and verification and age ordering are directly covered."
+  ],
+  "findings": [],
+  "followups": [
+    "Wire AssessmentRun step progress and cancellation to the persistent M7 activity center; the current application already persists coarse assessment activity state.",
+    "Use opportunities_from_report in the M7 Project Assessment command and Overview surface; M4 verifies the shared report/Finding conversion seam."
+  ]
+}

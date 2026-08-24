@@ -24,6 +24,7 @@ impl StubResponse {
         }
     }
 
+    #[allow(dead_code)]
     pub fn redirect(status: u16, location: impl Into<String>) -> Self {
         Self {
             status,

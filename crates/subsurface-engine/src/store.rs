@@ -7,8 +7,10 @@ use std::sync::Mutex;
 use thiserror::Error;
 use uuid::Uuid;
 
+use crate::assessment::ProjectAssessment;
 use crate::evidence::LineRange;
 use crate::excavate::Finding;
+use crate::grade::GradeOverride;
 use crate::provider::{ProviderConnectionPreferences, ProviderKind, ProviderProtocol};
 
 #[derive(Debug, Error)]
@@ -188,6 +190,20 @@ impl SqliteStore {
                 protocol TEXT NOT NULL,
                 is_local INTEGER NOT NULL DEFAULT 0,
                 updated_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS project_grade_overrides (
+                project_path TEXT PRIMARY KEY,
+                override_json TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS project_assessments (
+                project_path TEXT NOT NULL,
+                commit_sha TEXT NOT NULL,
+                assessed_at TEXT NOT NULL,
+                assessment_json TEXT NOT NULL,
+                PRIMARY KEY (project_path, commit_sha)
             );",
         )?;
         migrate_project_paths(&conn)?;
@@ -431,6 +447,90 @@ impl SqliteStore {
                     .ok_or(StoreError::InvalidProviderProtocol(protocol))?,
                 is_local,
             })
+        })
+        .collect()
+    }
+
+    pub fn save_grade_override(
+        &self,
+        project_path: &Path,
+        grade_override: &GradeOverride,
+    ) -> Result<(), StoreError> {
+        let conn = self.conn.lock().map_err(|_| StoreError::Lock)?;
+        conn.execute(
+            "INSERT INTO project_grade_overrides (project_path, override_json, updated_at)
+             VALUES (?1, ?2, ?3)
+             ON CONFLICT(project_path) DO UPDATE SET
+                 override_json = excluded.override_json,
+                 updated_at = excluded.updated_at",
+            params![
+                project_path.to_string_lossy(),
+                serde_json::to_string(grade_override)?,
+                Utc::now().to_rfc3339(),
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn load_grade_override(
+        &self,
+        project_path: &Path,
+    ) -> Result<Option<GradeOverride>, StoreError> {
+        let conn = self.conn.lock().map_err(|_| StoreError::Lock)?;
+        let mut statement = conn.prepare(
+            "SELECT override_json FROM project_grade_overrides WHERE project_path = ?1",
+        )?;
+        let mut rows = statement.query(params![project_path.to_string_lossy()])?;
+        rows.next()?
+            .map(|row| row.get::<_, String>(0))
+            .transpose()?
+            .map(|json| serde_json::from_str(&json))
+            .transpose()
+            .map_err(StoreError::from)
+    }
+
+    pub fn delete_grade_override(&self, project_path: &Path) -> Result<(), StoreError> {
+        let conn = self.conn.lock().map_err(|_| StoreError::Lock)?;
+        conn.execute(
+            "DELETE FROM project_grade_overrides WHERE project_path = ?1",
+            params![project_path.to_string_lossy()],
+        )?;
+        Ok(())
+    }
+
+    pub fn save_assessment(&self, assessment: &ProjectAssessment) -> Result<(), StoreError> {
+        let conn = self.conn.lock().map_err(|_| StoreError::Lock)?;
+        conn.execute(
+            "INSERT INTO project_assessments
+             (project_path, commit_sha, assessed_at, assessment_json)
+             VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(project_path, commit_sha) DO UPDATE SET
+                 assessed_at = excluded.assessed_at,
+                 assessment_json = excluded.assessment_json",
+            params![
+                assessment.project_path.to_string_lossy(),
+                assessment.commit_sha,
+                assessment.assessed_at,
+                serde_json::to_string(assessment)?,
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn list_assessments(
+        &self,
+        project_path: &Path,
+    ) -> Result<Vec<ProjectAssessment>, StoreError> {
+        let conn = self.conn.lock().map_err(|_| StoreError::Lock)?;
+        let mut statement = conn.prepare(
+            "SELECT assessment_json FROM project_assessments
+             WHERE project_path = ?1 ORDER BY assessed_at DESC",
+        )?;
+        let rows = statement.query_map(params![project_path.to_string_lossy()], |row| {
+            row.get::<_, String>(0)
+        })?;
+        rows.map(|row| {
+            serde_json::from_str(&row?).map_err(StoreError::from)
         })
         .collect()
     }

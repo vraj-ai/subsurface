@@ -1,0 +1,25 @@
+{
+  "milestone": "M2",
+  "verdict": "PASS",
+  "reviewer": "Grok 4.6 High",
+  "range": "8be0a06..2338fd8 plus M2-6 working tree",
+  "gate": [
+    "cargo test --workspace",
+    "cargo test -p subsurface-engine --test m8_provider_contract_tests",
+    "cargo test -p subsurface-engine --test m9_oauth_bridge_tests",
+    "git diff --check",
+    "cargo build -p subsurface-app --release"
+  ],
+  "remediated": [
+    "OAuth and provider clients reject redirects before credentials or source payloads can be forwarded.",
+    "Live Excavate and Assessment provider calls route through Project-scoped outbound consent.",
+    "Payload preview and Excavate share the same prompt and provider JSON builders.",
+    "Provider connection testing rejects both saved and currently selected offline mode before network access."
+  ],
+  "findings": [],
+  "followups": [
+    "Persist and revoke per-Project always-allow from the M7 Privacy settings surface.",
+    "Bring model discovery and the optional OpenCode bridge under the same offline UI state when those controls are surfaced.",
+    "Replace the legacy shared key command path when the M7 Connections UI consumes persisted per-connection preferences."
+  ]
+}

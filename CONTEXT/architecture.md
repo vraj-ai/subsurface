@@ -19,6 +19,11 @@ approved Work Item. It improves codebases without applying changes to the Projec
   endpoints (OpenAI, xAI, OpenRouter, OpenCode Zen/Go/Free, Ollama, and Custom)
   plus OAuth where the provider offers it. OpenCode Go uses its API key, not
   OAuth. No curated model list. See `docs/adr/0005`.
+- External inference uses one outbound trust boundary. The preview and request
+  share the same provider payload builder; consent defaults to each request,
+  may be remembered only for the active Project, and offline mode blocks the
+  request before a socket opens. Provider and OAuth clients do not follow
+  redirects that could forward credentials or source payloads.
 - Agents reach Subsurface over MCP and share its Field Notes. See `docs/adr/0004`.
 - A selection is a line range, followed through history with `git log -L`.
   Symbol-level tracking is a later layer.
@@ -33,9 +38,18 @@ approved Work Item. It improves codebases without applying changes to the Projec
 - An Opportunity moves through Detected, Prepared, Verified or Failed, then
   Published or Dismissed. Preparation and tests run only in a disposable clone;
   the Project is never modified. See `docs/adr/0009`.
-- A Quality Grade is `A+` through `F`, or `Incomplete`. The overall grade is the
-  lowest measured dimension. A model may add a provisional critique but never
-  manufacture a missing metric. See `docs/adr/0010`.
+- A Project Assessment is bound to the opened Project's exact HEAD and persisted
+  once per Project and commit. Its history retains the strict grade, baseline and
+  per-dimension deltas, and Opportunities linked to the same Findings produced by
+  the existing report/Excavate seam. Opportunity ordering exposes named Impact,
+  verification, expected grade improvement, provisional effort, and age fields;
+  it has no composite priority score.
+- A Quality Grade is `A+` through `F`, or `Incomplete`, across correctness,
+  test protection, security, maintainability, simplicity, and Evidence fit.
+  The overall grade is the lowest measured dimension; known build, locked-test,
+  or critical-security failure forces `F` while retaining any measurement-gap
+  disclosure. A model may add a provisional critique but never manufacture a
+  missing metric. See `docs/adr/0010`.
 - Automatic Work Item publication is off by default and requires explicit
   per-Project, per-category enablement plus a user-selected minimum Quality Grade.
   `Incomplete` and model-only assessments are never eligible.

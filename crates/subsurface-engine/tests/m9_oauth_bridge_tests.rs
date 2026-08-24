@@ -3,6 +3,10 @@ mod support;
 use std::time::Duration;
 
 use subsurface_engine::oauth::{DevicePollResult, OAuthClient, OAuthError};
+use subsurface_engine::provider::{
+    ConsentDecision, NativeProvider, OpenAICompatibleProvider, OutboundPolicy,
+    ProviderConnectionPreferences, ProviderError, ProviderKind, ProviderProtocol,
+};
 use support::{LocalHttpFake, StubResponse};
 
 #[test]
@@ -186,4 +190,143 @@ fn oauth_secrets_are_not_forwarded_across_redirects() {
         Err(OAuthError::ExchangeFailed(_))
     ));
     assert!(receiver.requests().is_empty());
+}
+
+#[test]
+fn offline_mode_blocks_external_call() {
+    let server = LocalHttpFake::start_with(vec![chat_response("should-not-arrive")]);
+    let provider = provider_for(&server);
+    let mut policy = OutboundPolicy::new(true);
+    let project = std::path::Path::new("/tmp/example-project");
+
+    let preview = policy.preview(&provider, project, "private source");
+    assert_eq!(preview.project_path, project);
+    assert_eq!(preview.payload["messages"][0]["content"], "private source");
+    assert!(matches!(
+        policy.complete(
+            &provider,
+            project,
+            "private source",
+            Some(ConsentDecision::AllowOnce)
+        ),
+        Err(ProviderError::Offline)
+    ));
+    assert!(server.requests().is_empty());
+}
+
+#[test]
+fn consent_defaults_to_each_request_and_always_allow_is_project_scoped() {
+    let server = LocalHttpFake::start_with(vec![
+        chat_response("once"),
+        chat_response("always"),
+        chat_response("remembered"),
+    ]);
+    let provider = provider_for(&server);
+    let mut policy = OutboundPolicy::new(false);
+    let project = std::path::Path::new("/tmp/project-one");
+
+    assert!(matches!(
+        policy.complete(&provider, project, "first", None),
+        Err(ProviderError::ConsentRequired)
+    ));
+    assert_eq!(
+        policy
+            .complete(
+                &provider,
+                project,
+                "first",
+                Some(ConsentDecision::AllowOnce)
+            )
+            .unwrap(),
+        "once"
+    );
+    assert!(matches!(
+        policy.complete(&provider, project, "second", None),
+        Err(ProviderError::ConsentRequired)
+    ));
+    assert_eq!(
+        policy
+            .complete(
+                &provider,
+                project,
+                "second",
+                Some(ConsentDecision::AlwaysAllowProject)
+            )
+            .unwrap(),
+        "always"
+    );
+    assert_eq!(
+        policy.complete(&provider, project, "third", None).unwrap(),
+        "remembered"
+    );
+    assert!(matches!(
+        policy.complete(
+            &provider,
+            std::path::Path::new("/tmp/project-two"),
+            "other",
+            None
+        ),
+        Err(ProviderError::ConsentRequired)
+    ));
+    assert_eq!(server.requests().len(), 3);
+}
+
+#[test]
+fn provider_payload_is_not_forwarded_across_redirects() {
+    let receiver = LocalHttpFake::start();
+    let redirector = LocalHttpFake::start_with(vec![StubResponse::redirect(
+        307,
+        format!("http://{}/collect", receiver.address()),
+    )]);
+    let provider = provider_for(&redirector);
+    let mut policy = OutboundPolicy::new(false);
+
+    assert!(policy
+        .complete(
+            &provider,
+            std::path::Path::new("/tmp/example-project"),
+            "private source",
+            Some(ConsentDecision::AllowOnce)
+        )
+        .is_err());
+    assert!(receiver.requests().is_empty());
+}
+
+#[test]
+fn legacy_provider_preview_matches_the_body_it_sends() {
+    let provider =
+        OpenAICompatibleProvider::new("https://provider.example/v1", "secret", "selected-model");
+    let policy = OutboundPolicy::new(false);
+
+    let preview = policy.preview(
+        &provider,
+        std::path::Path::new("/tmp/example-project"),
+        "private source",
+    );
+    assert_eq!(preview.payload["model"], "selected-model");
+    assert_eq!(preview.payload["messages"][0]["role"], "user");
+    assert_eq!(preview.payload["messages"][0]["content"], "private source");
+}
+
+fn provider_for(server: &LocalHttpFake) -> NativeProvider {
+    NativeProvider::new(
+        ProviderConnectionPreferences {
+            id: "consent-test".into(),
+            name: "Consent Test".into(),
+            provider: ProviderKind::Custom,
+            base_url: format!("http://{}", server.address()),
+            model: "test-model".into(),
+            protocol: ProviderProtocol::ChatCompletions,
+            is_local: false,
+        },
+        "test-key",
+    )
+    .with_timeout(Duration::from_secs(1))
+}
+
+fn chat_response(text: &str) -> StubResponse {
+    StubResponse::json(
+        200,
+        format!(r#"{{"choices":[{{"message":{{"content":"{text}"}}}}]}}"#),
+    )
 }

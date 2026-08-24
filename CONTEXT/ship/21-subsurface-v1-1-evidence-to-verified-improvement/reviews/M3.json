@@ -1,0 +1,22 @@
+{
+  "milestone": "M3",
+  "verdict": "PASS",
+  "reviewer": "Prime Agent Claude Sonnet 5",
+  "range": "M3 working tree based on 2338fd8",
+  "gate": [
+    "cargo test --workspace",
+    "cargo test -p subsurface-engine --test m10_grade_tests",
+    "git diff --check"
+  ],
+  "remediated": [
+    "The six dimensions now match parent issue #21 rather than generic tool categories.",
+    "Coverage, Maintainability Index, changed-function complexity, and all security severities use their locked raw-metric bands.",
+    "Known build, locked-test, or critical-security failure forces F even when another required dimension is missing.",
+    "Every raw band boundary and the hard-failure-plus-missing case has direct regression coverage."
+  ],
+  "findings": [],
+  "followups": [
+    "Surface persisted Quality Profile overrides and revocation in the M7 settings workspace.",
+    "Use M4 Assessment receipts to populate the six measurement inputs without manufacturing unavailable values."
+  ]
+}

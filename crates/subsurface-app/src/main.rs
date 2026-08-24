@@ -7,11 +7,11 @@ use serde::{Deserialize, Serialize};
 use tauri::State;
 
 use subsurface_engine::evidence::LineRange;
-use subsurface_engine::excavate::{excavate, Finding};
+use subsurface_engine::excavate::{excavate, provider_prompt, Finding};
 use subsurface_engine::mcp::{McpServer, McpStatus};
 use subsurface_engine::provider::{
-    FakeProvider, KeychainStore, OpenAICompatibleProvider, Provider, ALL_PRESETS,
-    PRESET_OPENAI,
+    ConsentDecision, ConsentProvider, FakeProvider, KeychainStore, OpenAICompatibleProvider,
+    OutboundPolicy, PayloadPreview, Provider, ProviderError, ALL_PRESETS, PRESET_OPENAI,
 };
 use subsurface_engine::project::Project;
 use subsurface_engine::report::{estimate_site_report_cost, generate_site_report, SiteReport, SiteReportEstimate};
@@ -49,6 +49,7 @@ pub struct AppState {
     pub mcp: Arc<McpServer>,
     pub recent_sites: Arc<Mutex<RecentSitesStore>>,
     pub settings: Arc<Mutex<ProviderSettings>>,
+    pub outbound_policy: Arc<Mutex<OutboundPolicy>>,
 }
 
 fn get_db_path() -> PathBuf {
@@ -194,7 +195,8 @@ fn preview_payload(
     file_path: String,
     start_line: usize,
     end_line: usize,
-) -> Result<String, String> {
+    state: State<'_, AppState>,
+) -> Result<PayloadPreview, String> {
     let site = Site::open(PathBuf::from(&site_path)).map_err(|e| e.to_string())?;
     let range = LineRange {
         start: start_line,
@@ -207,46 +209,58 @@ fn preview_payload(
         &subsurface_engine::budget::BudgetConfig::default(),
     );
 
-    let mut payload = format!(
-        "--- TARGET CODE ({}:{}-{}) ---\n\n",
-        file_path, start_line, end_line
-    );
     let full = fs::read_to_string(site.root_path.join(&file_path)).unwrap_or_default();
     let lines: Vec<&str> = full.lines().collect();
     let start_idx = start_line.saturating_sub(1);
     let end_idx = end_line.min(lines.len());
-    if start_idx < end_idx && start_idx < lines.len() {
-        payload.push_str(&lines[start_idx..end_idx].join("\n"));
-        payload.push_str("\n\n");
-    }
+    let current_code = if start_idx < end_idx && start_idx < lines.len() {
+        lines[start_idx..end_idx].join("\n")
+    } else {
+        String::new()
+    };
+    let prompt = provider_prompt(&current_code, &budgeted.included);
+    let settings = state.settings.lock().map_err(|_| "Settings lock failed")?.clone();
+    let provider = OpenAICompatibleProvider::new(settings.base_url, "", settings.model);
+    state
+        .outbound_policy
+        .lock()
+        .map_err(|_| "Outbound policy lock failed".to_string())
+        .map(|policy| policy.preview(&provider, &site.root_path, &prompt))
+}
 
-    payload.push_str("--- INCLUDED EVIDENCE (Ranked) ---\n\n");
-    for (i, ev) in budgeted.included.iter().enumerate() {
-        payload.push_str(&format!(
-            "[{}] Commit {} by {} ({})\nMessage: {}\nDiff:\n{}\n\n",
-            i + 1,
-            &ev.commit_sha[..7.min(ev.commit_sha.len())],
-            ev.author,
-            ev.timestamp,
-            ev.message,
-            ev.diff
+fn provider_for_project(
+    settings: &ProviderSettings,
+    project_path: &std::path::Path,
+    consent: Option<ConsentDecision>,
+    state: &AppState,
+) -> Arc<dyn Provider> {
+    let key = if settings.offline_mode {
+        String::new()
+    } else {
+        KeychainStore::get_key("subsurface_api_key").unwrap_or_default().unwrap_or_default()
+    };
+    if settings.offline_mode {
+        return Arc::new(FakeProvider::new("Offline mode active: showing local git archaeology facts."));
+    }
+    if key.is_empty()
+        && !settings.base_url.contains("localhost")
+        && !settings.base_url.contains("127.0.0.1")
+    {
+        return Arc::new(FakeProvider::new(
+            "No provider key configured in settings; showing git archaeology facts.",
         ));
     }
-
-    payload.push_str(&format!(
-        "--- EXCLUDED EVIDENCE ({} items beyond budget cap) ---\n\n",
-        budgeted.excluded.len()
+    let provider: Arc<dyn Provider> = Arc::new(OpenAICompatibleProvider::new(
+        &settings.base_url,
+        key,
+        &settings.model,
     ));
-    for ex in &budgeted.excluded {
-        payload.push_str(&format!(
-            "- Commit {}: {} ({})\n",
-            &ex.commit_sha[..7.min(ex.commit_sha.len())],
-            ex.message_summary,
-            ex.reason
-        ));
-    }
-
-    Ok(payload)
+    Arc::new(ConsentProvider::new(
+        provider,
+        state.outbound_policy.clone(),
+        project_path,
+        consent,
+    ))
 }
 
 #[tauri::command]
@@ -255,6 +269,7 @@ fn excavate_range(
     file_path: String,
     start_line: usize,
     end_line: usize,
+    consent: Option<ConsentDecision>,
     state: State<'_, AppState>,
 ) -> Result<Finding, String> {
     let site = Site::open(PathBuf::from(&site_path)).map_err(|e| e.to_string())?;
@@ -270,15 +285,7 @@ fn excavate_range(
     }
 
     let settings = state.settings.lock().unwrap().clone();
-    let key = KeychainStore::get_key("subsurface_api_key").unwrap_or_default().unwrap_or_default();
-    
-    let provider: Arc<dyn Provider> = if settings.offline_mode {
-        Arc::new(FakeProvider::new("Offline mode active: showing local git archaeology facts."))
-    } else if !key.is_empty() || settings.base_url.contains("localhost") || settings.base_url.contains("127.0.0.1") {
-        Arc::new(OpenAICompatibleProvider::new(&settings.base_url, &key, &settings.model))
-    } else {
-        Arc::new(FakeProvider::new("No provider key configured in settings; showing git archaeology facts."))
-    };
+    let provider = provider_for_project(&settings, &site.root_path, consent, &state);
 
     let finding = excavate(&site, &file_path, range, provider).map_err(|e| e.to_string())?;
 
@@ -326,23 +333,26 @@ fn get_mcp_status(state: State<'_, AppState>) -> Result<McpStatus, String> {
 fn generate_report(
     site_path: String,
     filter_prefix: Option<String>,
+    consent: Option<ConsentDecision>,
     state: State<'_, AppState>,
 ) -> Result<SiteReport, String> {
-    assess_project_inner(&site_path, filter_prefix.as_deref(), &state)
+    assess_project_inner(&site_path, filter_prefix.as_deref(), consent, &state)
 }
 
 #[tauri::command]
 fn assess_project(
     project_path: String,
     filter_prefix: Option<String>,
+    consent: Option<ConsentDecision>,
     state: State<'_, AppState>,
 ) -> Result<SiteReport, String> {
-    assess_project_inner(&project_path, filter_prefix.as_deref(), &state)
+    assess_project_inner(&project_path, filter_prefix.as_deref(), consent, &state)
 }
 
 fn assess_project_inner(
     project_path: &str,
     filter_prefix: Option<&str>,
+    consent: Option<ConsentDecision>,
     state: &AppState,
 ) -> Result<SiteReport, String> {
     let project = Project::open(PathBuf::from(project_path)).map_err(|e| e.to_string())?;
@@ -356,18 +366,7 @@ fn assess_project_inner(
             .update_activity(id, ActivityStatus::Running, None);
     }
     let settings = state.settings.lock().unwrap().clone();
-    let key = if settings.offline_mode {
-        String::new()
-    } else {
-        KeychainStore::get_key("subsurface_api_key").unwrap_or_default().unwrap_or_default()
-    };
-    let provider: Arc<dyn Provider> = if settings.offline_mode {
-        Arc::new(FakeProvider::new("Project assessment offline pass"))
-    } else if !key.is_empty() || settings.base_url.contains("localhost") {
-        Arc::new(OpenAICompatibleProvider::new(&settings.base_url, &key, &settings.model))
-    } else {
-        Arc::new(FakeProvider::new("Project assessment archaeology pass"))
-    };
+    let provider = provider_for_project(&settings, &project.root_path, consent, state);
 
     match generate_site_report(&project, filter_prefix, provider).map_err(|e| e.to_string()) {
         Ok(report) => {
@@ -416,11 +415,18 @@ fn save_provider_settings(
             KeychainStore::save_key("subsurface_api_key", trimmed)?;
         }
     }
-    let mut settings = state.settings.lock().unwrap();
-    settings.base_url = base_url;
-    settings.model = model;
-    settings.offline_mode = offline_mode;
-    settings.has_key = KeychainStore::get_key("subsurface_api_key").unwrap_or_default().is_some();
+    {
+        let mut settings = state.settings.lock().unwrap();
+        settings.base_url = base_url;
+        settings.model = model;
+        settings.offline_mode = offline_mode;
+        settings.has_key = KeychainStore::get_key("subsurface_api_key").unwrap_or_default().is_some();
+    }
+    state
+        .outbound_policy
+        .lock()
+        .map_err(|_| "Outbound policy lock failed".to_string())?
+        .set_offline(offline_mode);
     Ok(())
 }
 
@@ -429,7 +435,12 @@ fn test_provider_connection(
     base_url: String,
     api_key: Option<String>,
     model: String,
+    offline_mode: bool,
+    state: State<'_, AppState>,
 ) -> Result<String, String> {
+    if offline_mode || state.settings.lock().map_err(|_| "Settings lock failed")?.offline_mode {
+        return Err(ProviderError::Offline.to_string());
+    }
     let key = if let Some(k) = api_key {
         if !k.trim().is_empty() {
             k
@@ -474,6 +485,7 @@ fn main() {
         mcp,
         recent_sites: Arc::new(Mutex::new(RecentSitesStore::default())),
         settings: Arc::new(Mutex::new(initial_settings)),
+        outbound_policy: Arc::new(Mutex::new(OutboundPolicy::new(false))),
     };
 
     tauri::Builder::default()
@@ -526,6 +538,7 @@ mod tests {
                 offline_mode: true,
                 presets: Vec::new(),
             })),
+            outbound_policy: Arc::new(Mutex::new(OutboundPolicy::new(true))),
         }
     }
 
@@ -537,7 +550,7 @@ mod tests {
 
         let opened =
             open_project_inner(project.path().to_str().unwrap(), &state).expect("open project");
-        assess_project_inner(project.path().to_str().unwrap(), None, &state)
+        assess_project_inner(project.path().to_str().unwrap(), None, None, &state)
             .expect("assess project");
 
         let activities = state
@@ -553,7 +566,7 @@ mod tests {
         let empty_project_path = Project::open(empty_project.path())
             .expect("empty project")
             .root_path;
-        let error = assess_project_inner(empty_project.path().to_str().unwrap(), None, &state)
+        let error = assess_project_inner(empty_project.path().to_str().unwrap(), None, None, &state)
             .expect_err("assessment without HEAD");
         let failed = state
             .store
