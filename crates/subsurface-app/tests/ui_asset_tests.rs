@@ -889,6 +889,116 @@ fn excavate_mode_swaps_left_to_tree() {
     );
 }
 
+#[test]
+fn field_notes_are_left_filter() {
+    let opportunities = extract_surface(UI_BUNDLE, "opportunities");
+    assert!(
+        opportunities.contains("Field Notes"),
+        "Field Notes must appear as a left-column filter or section"
+    );
+    assert!(
+        attr_values(&opportunities, "data-shell-region")
+            .iter()
+            .any(|value| value == "left"),
+        "Field Notes occupy the left Shell region with Opportunities"
+    );
+    assert!(
+        opportunities.contains("data-left-filter=\"field-notes\"")
+            && opportunities.contains("data-left-list=\"field-notes\""),
+        "Field Notes are a left-column filter, not another room"
+    );
+    assert!(
+        opportunities.contains("id=\"fieldNoteRoster\"")
+            || opportunities.contains("field-note-roster"),
+        "left column lists Field Notes"
+    );
+    assert!(
+        !opportunities.contains("view-container"),
+        "Field Notes are not a view-container room"
+    );
+    assert!(
+        !contains_tab_pattern(&opportunities),
+        "Field Notes filter is a section, not a tab strip"
+    );
+
+    let settings = extract_surface(UI_BUNDLE, "settings");
+    assert!(
+        !settings.contains("Field Notes")
+            && !settings.contains("field-notes")
+            && !settings.contains("data-settings-section=\"notes\""),
+        "Field Notes must not be a Settings destination"
+    );
+    let settings_ids = attr_values(&settings, "data-settings-section");
+    assert_eq!(
+        settings_ids, SETTINGS_SECTIONS,
+        "Settings keeps the five product sections; Field Notes are not among them"
+    );
+
+    assert!(
+        UI_BUNDLE.contains("function selectFieldNote")
+            || UI_BUNDLE.contains("async function selectFieldNote"),
+        "opening a Field Note must be a left-column action"
+    );
+    let open = js_function_body(UI_BUNDLE, "selectFieldNote");
+    assert!(
+        open.contains("renderFinding") || open.contains("setStrataBody"),
+        "opening a Field Note uses the same Strata as an Opportunity, got {open}"
+    );
+    assert!(
+        !open.contains("openSettingsModal") && !open.contains("settingsSheet"),
+        "opening a Field Note must not go to Settings"
+    );
+    assert!(
+        !open.contains("enterExcavateMode"),
+        "opening a Field Note drills Strata; it must not swap the Shell into Excavate"
+    );
+    let strata_count = UI_BUNDLE.matches("data-surface=\"strata\"").count();
+    assert_eq!(
+        strata_count, 1,
+        "Field Notes drill the same Strata surface as Opportunities"
+    );
+
+    assert!(
+        UI_BUNDLE.contains("list_field_notes"),
+        "Field Notes roster reads the engine store"
+    );
+
+    assert!(
+        css_block(UI_BUNDLE, "[data-left-list=field-notes]").contains("display: none"),
+        "Field Notes list is a filter of the left column, hidden until selected"
+    );
+    assert!(
+        css_block(
+            UI_BUNDLE,
+            "[data-surface=opportunities][data-left-filter=field-notes] [data-left-list=field-notes]"
+        )
+        .contains("display: flex"),
+        "selecting the Field Notes filter must show the Field Notes list"
+    );
+    assert!(
+        css_block(
+            UI_BUNDLE,
+            "[data-surface=opportunities][data-left-filter=field-notes] [data-left-list=opportunities]"
+        )
+        .contains("display: none"),
+        "the Field Notes filter swaps the Opportunities list, not the Shell layout"
+    );
+
+    assert!(
+        css_block(
+            UI_BUNDLE,
+            "body[data-mode=excavate] [data-surface=opportunities]"
+        )
+        .contains("display: none"),
+        "Excavate still swaps Field Notes off the left with Opportunities"
+    );
+    let shell_css = css_block(UI_BUNDLE, ".shell-layout");
+    assert!(
+        shell_css.contains("grid-template-columns: 280px minmax(0, 1fr)"),
+        "Field Notes stay in the left column; they must not insert a fourth pane"
+    );
+}
+
 fn picker_mentions_site(markup: &str) -> bool {
     markup
         .split(|c: char| !c.is_ascii_alphabetic())
