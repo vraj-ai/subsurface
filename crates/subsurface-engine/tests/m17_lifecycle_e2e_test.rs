@@ -148,14 +148,6 @@ fn opportunity_receipt(
 fn git_fixture_lifecycle_assess_prepare_verify_grade_receipt_publish() {
     let mut fixture = GitFixture::new();
     fixture.commit(
-        "Workaround for parser bug (Issue #99)",
-        &[("src/workaround.rs", "fn workaround() {}\n")],
-    );
-    fixture.commit(
-        "Closes #99 because upstream fixed the parser",
-        &[("Cargo.toml", "# dependency updated\n")],
-    );
-    fixture.commit(
         "initial lib",
         &[
             ("src/lib.rs", "fn broken() {}\n"),
@@ -287,10 +279,7 @@ fn git_fixture_lifecycle_assess_prepare_verify_grade_receipt_publish() {
 
     // Grade
     let candidate_grade = measurements(true, 95).grade(None);
-    assert_eq!(
-        candidate_grade.overall,
-        Grade::Letter(LetterGrade::APlus)
-    );
+    assert_eq!(candidate_grade.overall, Grade::Letter(LetterGrade::APlus));
     assert!(candidate_grade.missing_dimensions.is_empty());
     assert!(candidate_grade.hard_failures.is_empty());
     assert!(candidate_grade.automation_eligible);
@@ -390,10 +379,7 @@ fn git_fixture_lifecycle_assess_prepare_verify_grade_receipt_publish() {
         .expect("Verified → Published");
     opportunity.record_publication(published);
     assert_eq!(opportunity.state, OpportunityState::Published);
-    assert_eq!(
-        opportunity.status,
-        OpportunityStatus::Published
-    );
+    assert_eq!(opportunity.status, OpportunityStatus::Published);
 
     let after = fingerprint_project(&project).expect("fingerprint after publish");
     assert_eq!(after, before);
