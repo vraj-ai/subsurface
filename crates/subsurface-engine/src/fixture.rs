@@ -120,6 +120,10 @@ impl GitFixture {
         self.run_git(&["rev-parse", "HEAD"], &[])
     }
 
+    pub fn add_remote(&self, name: &str, url: &str) {
+        self.run_git(&["remote", "add", name, url], &[]);
+    }
+
     pub fn branch(&mut self, branch_name: &str) {
         self.run_git(&["branch", branch_name], &[]);
     }
