@@ -4,10 +4,12 @@ use std::process::Command;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use thiserror::Error;
 
 use crate::oauth::{DevicePollResult, OAuthClient, OAuthError};
 use crate::project::Project;
+use crate::receipt::{ImprovementReceipt, ReceiptVerdict};
 
 /// GitHub is the only Work Item destination in v1.1.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -32,6 +34,12 @@ pub enum GitHubError {
     Unavailable(String),
     #[error("GitHub authentication failed: {0}")]
     AuthFailed(String),
+    #[error("GitHub request timed out: {0}")]
+    Timeout(String),
+    #[error("GitHub API error: {0}")]
+    Api(String),
+    #[error("Malformed GitHub response: {0}")]
+    MalformedResponse(String),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -481,4 +489,363 @@ pub fn github_oauth_client(
     OAuthClient::new(client_id, auth_url, token_url)
         .with_device_authorization_url(device_authorization_url)
         .with_timeout(Duration::from_secs(45))
+}
+
+const FINGERPRINT_KIND: &str = "subsurface-work-item:sha256:";
+
+/// Approved change proposal ready to publish as a GitHub Work Item.
+/// Identity comes from an approved Opportunity; the published artifact is a Work Item.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct WorkItemDraft {
+    pub id: String,
+    pub title: String,
+    pub category: String,
+    pub file_path: String,
+    pub summary: String,
+    pub evidence_ids: Vec<String>,
+    pub base_commit: Option<String>,
+    pub receipt: Option<WorkItemReceipt>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct WorkItemReceipt {
+    pub verdict: String,
+    pub improved: Vec<String>,
+    pub proving_checks: Vec<String>,
+    pub remaining: Vec<String>,
+}
+
+impl WorkItemDraft {
+    pub fn with_improvement_receipt(mut self, receipt: &ImprovementReceipt) -> Self {
+        self.base_commit = Some(receipt.base_commit.clone());
+        self.receipt = Some(WorkItemReceipt {
+            verdict: match receipt.verdict {
+                ReceiptVerdict::Improved => "improved".into(),
+                ReceiptVerdict::Failed => "failed".into(),
+            },
+            improved: receipt.improved.clone(),
+            proving_checks: receipt.proving_checks.clone(),
+            remaining: receipt.remaining.clone(),
+        });
+        self
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct RenderedWorkItem {
+    pub title: String,
+    pub body: String,
+    pub fingerprint: String,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum PublishOutcome {
+    Created,
+    Existing,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PublishedWorkItem {
+    pub destination: GitHubDestination,
+    pub number: u64,
+    pub html_url: String,
+    pub fingerprint: String,
+    pub outcome: PublishOutcome,
+}
+
+/// Injectable GitHub Issues client. Tests point this at a local HTTP fake.
+pub struct GitHubClient {
+    base_url: String,
+    timeout: Duration,
+}
+
+impl Default for GitHubClient {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl GitHubClient {
+    pub fn new() -> Self {
+        Self {
+            base_url: "https://api.github.com".into(),
+            timeout: Duration::from_secs(45),
+        }
+    }
+
+    pub fn with_base_url(mut self, base_url: impl Into<String>) -> Self {
+        self.base_url = base_url.into().trim_end_matches('/').to_string();
+        self
+    }
+
+    pub fn with_timeout(mut self, timeout: Duration) -> Self {
+        self.timeout = timeout;
+        self
+    }
+
+    pub fn base_url(&self) -> &str {
+        &self.base_url
+    }
+}
+
+/// Stable fingerprint for one Work Item identity at one GitHub destination.
+pub fn work_item_fingerprint(destination: &GitHubDestination, draft: &WorkItemDraft) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(b"subsurface-work-item\0");
+    hasher.update(destination.owner.as_bytes());
+    hasher.update(b"\0");
+    hasher.update(destination.repo.as_bytes());
+    hasher.update(b"\0");
+    hasher.update(draft.id.as_bytes());
+    hasher.update(b"\0");
+    hasher.update(draft.category.as_bytes());
+    hasher.update(b"\0");
+    hasher.update(draft.file_path.as_bytes());
+    hasher.update(b"\0");
+    for evidence_id in &draft.evidence_ids {
+        hasher.update(evidence_id.as_bytes());
+        hasher.update(b"\0");
+    }
+    format!("{:x}", hasher.finalize())
+}
+
+pub fn fingerprint_marker(fingerprint: &str) -> String {
+    format!("{FINGERPRINT_KIND}{fingerprint}")
+}
+
+/// Render the GitHub issue title and body, including the idempotency fingerprint.
+pub fn render_work_item(
+    destination: &GitHubDestination,
+    draft: &WorkItemDraft,
+) -> RenderedWorkItem {
+    let fingerprint = work_item_fingerprint(destination, draft);
+    let marker = fingerprint_marker(&fingerprint);
+    let mut sections = vec![
+        format!("# {}", draft.title.trim()),
+        String::new(),
+        format!(
+            "This Work Item is an approved change proposal for `{}`.",
+            draft.file_path
+        ),
+        String::new(),
+        "## Category".to_string(),
+        draft.category.clone(),
+        String::new(),
+        "## Problem".to_string(),
+        draft.summary.clone(),
+        String::new(),
+        "## Evidence".to_string(),
+    ];
+    if draft.evidence_ids.is_empty() {
+        sections.push("No Evidence recorded.".into());
+    } else {
+        for evidence_id in &draft.evidence_ids {
+            sections.push(format!("- `{evidence_id}`"));
+        }
+    }
+    if let Some(commit) = &draft.base_commit {
+        sections.push(String::new());
+        sections.push("## Base commit".into());
+        sections.push(format!("`{commit}`"));
+    }
+    if let Some(receipt) = &draft.receipt {
+        sections.push(String::new());
+        sections.push("## Improvement Receipt".into());
+        sections.push(format!("Verdict: {}", receipt.verdict));
+        push_named_list(&mut sections, "Improved", &receipt.improved);
+        push_named_list(&mut sections, "Proving checks", &receipt.proving_checks);
+        push_named_list(&mut sections, "Remaining", &receipt.remaining);
+    }
+    sections.push(String::new());
+    sections.push("---".into());
+    sections.push(format!("`{marker}`"));
+    sections.push(format!("<!-- {marker} -->"));
+    sections.push(String::new());
+
+    RenderedWorkItem {
+        title: draft.title.clone(),
+        body: sections.join("\n"),
+        fingerprint,
+    }
+}
+
+fn push_named_list(sections: &mut Vec<String>, heading: &str, items: &[String]) {
+    sections.push(String::new());
+    sections.push(format!("{heading}:"));
+    if items.is_empty() {
+        sections.push("- none".into());
+        return;
+    }
+    for item in items {
+        sections.push(format!("- {item}"));
+    }
+}
+
+/// Publish a Work Item to GitHub. Searches for an existing fingerprint first.
+/// If create times out after GitHub accepted the issue, recovers the existing
+/// fingerprint instead of creating a duplicate.
+pub fn publish_work_item(
+    client: &GitHubClient,
+    destination: &GitHubDestination,
+    auth: &GitHubAuth,
+    draft: &WorkItemDraft,
+) -> Result<PublishedWorkItem, GitHubError> {
+    let rendered = render_work_item(destination, draft);
+    if let Some(existing) = find_work_item(client, destination, auth, &rendered.fingerprint)? {
+        return Ok(existing);
+    }
+
+    match create_work_item(client, destination, auth, &rendered) {
+        Ok(created) => Ok(created),
+        Err(GitHubError::Timeout(message)) => {
+            match find_work_item(client, destination, auth, &rendered.fingerprint)? {
+                Some(existing) => Ok(existing),
+                None => Err(GitHubError::Timeout(message)),
+            }
+        }
+        Err(error) => Err(error),
+    }
+}
+
+fn find_work_item(
+    client: &GitHubClient,
+    destination: &GitHubDestination,
+    auth: &GitHubAuth,
+    fingerprint: &str,
+) -> Result<Option<PublishedWorkItem>, GitHubError> {
+    let marker = fingerprint_marker(fingerprint);
+    let mut url = reqwest::Url::parse(&format!("{}/search/issues", client.base_url))
+        .map_err(|error| GitHubError::Api(error.to_string()))?;
+    url.query_pairs_mut().append_pair(
+        "q",
+        &format!(
+            "repo:{}/{} \"{marker}\" in:body",
+            destination.owner, destination.repo
+        ),
+    );
+
+    let response = authorized(client, auth)?
+        .get(url)
+        .send()
+        .map_err(classify_github_error)?;
+    let status = response.status();
+    let body = response.text().map_err(classify_github_error)?;
+    if !status.is_success() {
+        return Err(GitHubError::Api(format!("HTTP {status}: {body}")));
+    }
+
+    #[derive(Deserialize)]
+    struct SearchResults {
+        items: Vec<IssueResponse>,
+    }
+
+    let results: SearchResults = serde_json::from_str(&body)
+        .map_err(|error| GitHubError::MalformedResponse(error.to_string()))?;
+    let Some(issue) = results.items.into_iter().find(|issue| {
+        issue
+            .body
+            .as_deref()
+            .is_some_and(|text| text.contains(&marker))
+    }) else {
+        return Ok(None);
+    };
+
+    Ok(Some(PublishedWorkItem {
+        destination: destination.clone(),
+        number: issue.number,
+        html_url: issue.html_url,
+        fingerprint: fingerprint.to_owned(),
+        outcome: PublishOutcome::Existing,
+    }))
+}
+
+fn create_work_item(
+    client: &GitHubClient,
+    destination: &GitHubDestination,
+    auth: &GitHubAuth,
+    rendered: &RenderedWorkItem,
+) -> Result<PublishedWorkItem, GitHubError> {
+    let url = format!(
+        "{}/repos/{}/{}/issues",
+        client.base_url, destination.owner, destination.repo
+    );
+    #[derive(Serialize)]
+    struct CreateIssue<'a> {
+        title: &'a str,
+        body: &'a str,
+    }
+    let response = authorized(client, auth)?
+        .post(&url)
+        .json(&CreateIssue {
+            title: &rendered.title,
+            body: &rendered.body,
+        })
+        .send()
+        .map_err(classify_github_error)?;
+    let status = response.status();
+    let body = response.text().map_err(classify_github_error)?;
+    if status.as_u16() != 201 && !status.is_success() {
+        return Err(GitHubError::Api(format!("HTTP {status}: {body}")));
+    }
+    let issue: IssueResponse = serde_json::from_str(&body)
+        .map_err(|error| GitHubError::MalformedResponse(error.to_string()))?;
+    Ok(PublishedWorkItem {
+        destination: destination.clone(),
+        number: issue.number,
+        html_url: issue.html_url,
+        fingerprint: rendered.fingerprint.clone(),
+        outcome: PublishOutcome::Created,
+    })
+}
+
+fn authorized(
+    client: &GitHubClient,
+    auth: &GitHubAuth,
+) -> Result<reqwest::blocking::Client, GitHubError> {
+    reqwest::blocking::Client::builder()
+        .timeout(client.timeout)
+        .redirect(reqwest::redirect::Policy::none())
+        .default_headers(default_headers(auth)?)
+        .build()
+        .map_err(|error| GitHubError::Api(error.to_string()))
+}
+
+fn default_headers(auth: &GitHubAuth) -> Result<reqwest::header::HeaderMap, GitHubError> {
+    use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, AUTHORIZATION, USER_AGENT};
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        USER_AGENT,
+        HeaderValue::from_static("subsurface-work-item-publisher"),
+    );
+    headers.insert(
+        ACCEPT,
+        HeaderValue::from_static("application/vnd.github+json"),
+    );
+    headers.insert(
+        AUTHORIZATION,
+        HeaderValue::from_str(&format!("Bearer {}", auth.token))
+            .map_err(|error| GitHubError::Api(error.to_string()))?,
+    );
+    headers.insert(
+        "X-GitHub-Api-Version",
+        HeaderValue::from_static("2022-11-28"),
+    );
+    Ok(headers)
+}
+
+#[derive(Deserialize)]
+struct IssueResponse {
+    number: u64,
+    html_url: String,
+    #[serde(default)]
+    body: Option<String>,
+}
+
+fn classify_github_error(error: reqwest::Error) -> GitHubError {
+    if error.is_timeout() {
+        GitHubError::Timeout(error.to_string())
+    } else {
+        GitHubError::Api(error.to_string())
+    }
 }

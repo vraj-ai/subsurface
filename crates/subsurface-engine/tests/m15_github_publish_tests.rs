@@ -6,12 +6,14 @@ use std::time::Duration;
 
 use subsurface_engine::fixture::GitFixture;
 use subsurface_engine::github::{
-    github_oauth_client, infer_github_destination, resolve_github_auth,
-    resolve_github_publish_target, GhCli, GhPermission, GitHubAuthMethod, GitHubAuthProbes,
-    GitHubError, WorkItemDestination,
+    fingerprint_marker, github_oauth_client, infer_github_destination, publish_work_item,
+    render_work_item, resolve_github_auth, resolve_github_publish_target, work_item_fingerprint,
+    GhCli, GhPermission, GitHubAuth, GitHubAuthMethod, GitHubAuthProbes, GitHubClient, GitHubError,
+    PublishOutcome, WorkItemDestination, WorkItemDraft,
 };
 use subsurface_engine::oauth::OAuthClient;
 use subsurface_engine::project::Project;
+use subsurface_engine::receipt::{ImprovementReceipt, ReceiptVerdict};
 use support::{LocalHttpFake, StubResponse};
 
 fn fake_gh(
@@ -247,4 +249,243 @@ fn github_auth_and_destination_fallback_order() {
     );
     assert_eq!(token_auth.token, "pasted-token");
     assert!(token_server.address().ip().is_loopback());
+}
+
+fn github_project() -> (GitFixture, Project) {
+    let mut fixture = GitFixture::new();
+    fixture.commit("initial", &[("src/auth.rs", "fn auth() {}\n")]);
+    fixture.add_remote("origin", "https://github.com/acme/widgets.git");
+    let project = Project::open(fixture.path()).expect("open github project");
+    (fixture, project)
+}
+
+fn publish_auth() -> GitHubAuth {
+    GitHubAuth {
+        method: GitHubAuthMethod::Token,
+        token: "gho_test_token".into(),
+        attempted: vec![GitHubAuthMethod::Token],
+    }
+}
+
+fn approved_draft(id: &str) -> WorkItemDraft {
+    WorkItemDraft {
+        id: id.into(),
+        title: "Restore rationale for auth".into(),
+        category: "missing-rationale".into(),
+        file_path: "src/auth.rs".into(),
+        summary: "history and docs contain no rationale".into(),
+        evidence_ids: vec!["src/auth.rs:1-20@abc123".into()],
+        base_commit: None,
+        receipt: None,
+    }
+    .with_improvement_receipt(&ImprovementReceipt {
+        base_commit: "abc123".into(),
+        improved: vec!["locked tests now prove the prepared change".into()],
+        proving_checks: vec!["locked-tests".into()],
+        remaining: vec![],
+        comparisons: vec![],
+        verdict: ReceiptVerdict::Improved,
+        project_fingerprint: subsurface_engine::candidate::GitFingerprint {
+            head: "abc123".into(),
+            porcelain: String::new(),
+        },
+    })
+}
+
+fn empty_search() -> StubResponse {
+    StubResponse::json(200, r#"{"total_count":0,"items":[]}"#)
+}
+
+fn search_hit(number: u64, body: &str) -> StubResponse {
+    let escaped = body
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\n', "\\n");
+    StubResponse::json(
+        200,
+        format!(
+            r#"{{"total_count":1,"items":[{{"number":{number},"html_url":"http://127.0.0.1/issues/{number}","title":"Restore rationale for auth","body":"{escaped}"}}]}}"#
+        ),
+    )
+}
+
+fn created_issue(number: u64, body: &str) -> StubResponse {
+    let escaped = body
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\n', "\\n");
+    StubResponse::json(
+        201,
+        format!(
+            r#"{{"number":{number},"html_url":"http://127.0.0.1/issues/{number}","title":"Restore rationale for auth","body":"{escaped}"}}"#
+        ),
+    )
+}
+
+fn request_is_create(request: &str) -> bool {
+    request.starts_with("POST /repos/acme/widgets/issues ")
+}
+
+fn request_is_search(request: &str) -> bool {
+    request.starts_with("GET /search/issues?")
+}
+
+#[test]
+fn publishes_fingerprinted_work_item_body() {
+    let (_fixture, project) = github_project();
+    let destination = infer_github_destination(&project).expect("infer destination");
+    let draft = approved_draft("missing-rationale:src/auth.rs:1-20@abc123");
+    let rendered = render_work_item(&destination, &draft);
+    let same_fingerprint = work_item_fingerprint(&destination, &draft);
+    assert_eq!(rendered.fingerprint, same_fingerprint);
+    assert_eq!(
+        work_item_fingerprint(&destination, &approved_draft(&draft.id)),
+        rendered.fingerprint,
+        "fingerprint must be stable for the same Work Item identity"
+    );
+    let mut other = approved_draft("other-id");
+    other.file_path = "src/other.rs".into();
+    assert_ne!(
+        work_item_fingerprint(&destination, &other),
+        rendered.fingerprint
+    );
+
+    assert!(
+        rendered.body.contains("Work Item"),
+        "published body must name a Work Item"
+    );
+    assert!(rendered.body.contains("## Evidence"));
+    assert!(rendered.body.contains("## Improvement Receipt"));
+    assert!(rendered.body.contains("`src/auth.rs:1-20@abc123`"));
+    assert!(rendered.body.contains("missing-rationale"));
+    assert!(rendered
+        .body
+        .contains(&fingerprint_marker(&rendered.fingerprint)));
+    assert!(
+        !rendered.body.contains("Opportunity"),
+        "published body must not call the Work Item an Opportunity: {}",
+        rendered.body
+    );
+    assert!(
+        !rendered.body.contains("Finding"),
+        "published body must not call the Work Item a Finding: {}",
+        rendered.body
+    );
+
+    let server = LocalHttpFake::start_with(vec![empty_search(), created_issue(81, &rendered.body)]);
+    let client = GitHubClient::new()
+        .with_base_url(format!("http://{}", server.address()))
+        .with_timeout(Duration::from_secs(2));
+    let published = publish_work_item(&client, &destination, &publish_auth(), &draft)
+        .expect("publish Work Item");
+    assert_eq!(published.number, 81);
+    assert_eq!(published.outcome, PublishOutcome::Created);
+    assert_eq!(published.fingerprint, rendered.fingerprint);
+    assert_eq!(published.destination.owner, "acme");
+    assert_eq!(published.destination.repo, "widgets");
+    assert_eq!(published.destination.kind(), WorkItemDestination::GitHub);
+
+    let requests = server.requests();
+    assert_eq!(requests.len(), 2);
+    assert!(request_is_search(&requests[0]));
+    assert!(requests[0].contains(&rendered.fingerprint));
+    assert!(request_is_create(&requests[1]));
+    assert!(
+        requests[1].contains(&fingerprint_marker(&rendered.fingerprint)),
+        "create body must embed the fingerprint"
+    );
+    assert!(requests[1].contains("This Work Item is an approved change proposal"));
+    assert!(
+        requests[1].to_ascii_lowercase().contains("authorization:")
+            && requests[1].contains("gho_test_token"),
+        "create must send the bearer token; headers were:\n{}",
+        requests[1].split("\r\n\r\n").next().unwrap_or(&requests[1])
+    );
+    assert!(
+        !requests
+            .iter()
+            .any(|request| request.contains("api.github.com")),
+        "tests must not write to live GitHub"
+    );
+    assert!(server.address().ip().is_loopback());
+}
+
+#[test]
+fn republish_finds_existing_fingerprint_without_duplicate() {
+    let (_fixture, project) = github_project();
+    let destination = infer_github_destination(&project).expect("infer destination");
+    let draft = approved_draft("missing-rationale:src/auth.rs:1-20@abc123");
+    let rendered = render_work_item(&destination, &draft);
+    let server = LocalHttpFake::start_with(vec![
+        search_hit(81, &rendered.body),
+        search_hit(81, &rendered.body),
+        StubResponse::json(500, r#"{"error":"duplicate create must not run"}"#),
+    ]);
+    let client = GitHubClient::new()
+        .with_base_url(format!("http://{}", server.address()))
+        .with_timeout(Duration::from_secs(2));
+
+    let first = publish_work_item(&client, &destination, &publish_auth(), &draft)
+        .expect("first publish recovers existing");
+    let second = publish_work_item(&client, &destination, &publish_auth(), &draft)
+        .expect("second publish is idempotent");
+    assert_eq!(first.number, 81);
+    assert_eq!(second.number, 81);
+    assert_eq!(first.outcome, PublishOutcome::Existing);
+    assert_eq!(second.outcome, PublishOutcome::Existing);
+    assert_eq!(first.fingerprint, rendered.fingerprint);
+
+    let requests = server.requests();
+    assert_eq!(requests.len(), 2);
+    assert!(requests.iter().all(|request| request_is_search(request)));
+    assert!(
+        !requests.iter().any(|request| request_is_create(request)),
+        "existing fingerprint must not create a duplicate issue: {requests:?}"
+    );
+}
+
+#[test]
+fn timeout_after_success_recovers_existing_fingerprint() {
+    let (_fixture, project) = github_project();
+    let destination = infer_github_destination(&project).expect("infer destination");
+    let draft = approved_draft("missing-rationale:src/auth.rs:1-20@abc123");
+    let rendered = render_work_item(&destination, &draft);
+    let server = LocalHttpFake::start_with(vec![
+        empty_search(),
+        created_issue(81, &rendered.body).delayed(Duration::from_millis(800)),
+        search_hit(81, &rendered.body),
+        StubResponse::json(500, r#"{"error":"second create would duplicate"}"#),
+    ]);
+    let client = GitHubClient::new()
+        .with_base_url(format!("http://{}", server.address()))
+        .with_timeout(Duration::from_millis(150));
+
+    let published = publish_work_item(&client, &destination, &publish_auth(), &draft)
+        .expect("timeout after success must recover the fingerprint");
+    assert_eq!(published.number, 81);
+    assert_eq!(published.outcome, PublishOutcome::Existing);
+    assert_eq!(published.fingerprint, rendered.fingerprint);
+
+    let requests = server.requests();
+    assert!(
+        requests.len() >= 3,
+        "expected search, timed-out create, recovery search; got {requests:?}"
+    );
+    assert!(request_is_search(&requests[0]));
+    assert!(request_is_create(&requests[1]));
+    assert!(request_is_search(&requests[2]));
+    let creates = requests
+        .iter()
+        .filter(|request| request_is_create(request))
+        .count();
+    assert_eq!(
+        creates, 1,
+        "timeout recovery must not create a duplicate issue: {requests:?}"
+    );
+    assert!(
+        !requests
+            .iter()
+            .any(|request| request.contains("api.github.com")),
+        "tests must not write to live GitHub"
+    );
 }
