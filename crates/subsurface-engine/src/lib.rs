@@ -10,6 +10,7 @@ pub mod oauth;
 pub mod project;
 pub mod provider;
 pub mod report;
+pub mod runtime;
 pub mod site;
 pub mod staleness;
 pub mod store;

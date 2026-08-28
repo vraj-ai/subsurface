@@ -317,6 +317,10 @@ impl OpenCodeBridge {
         })
     }
 
+    pub fn executable(&self) -> &Path {
+        &self.executable
+    }
+
     pub fn discover_models(&self, provider: Option<&str>) -> Result<Vec<String>, String> {
         let mut args = vec!["models"];
         if let Some(provider) = provider {
