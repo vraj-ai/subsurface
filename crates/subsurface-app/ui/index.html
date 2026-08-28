@@ -168,6 +168,7 @@
     .view-container {
       flex: 1;
       min-height: 0;
+      height: calc(100vh - 48px - var(--activity-strip-height));
       overflow: hidden;
       display: none;
     }
@@ -705,6 +706,7 @@
       display: none;
       position: fixed;
       inset: 0;
+      bottom: var(--activity-strip-height);
       background: var(--scrim);
       align-items: stretch;
       justify-content: flex-end;
@@ -783,10 +785,59 @@
       align-items: center;
       gap: 10px;
       padding: 6px 16px;
+      height: var(--activity-strip-height);
       background: var(--bg-panel-header);
       border-top: 1px solid var(--border-color);
       font-size: 11px;
       color: var(--text-secondary);
+    }
+
+    .activity-heading {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.4px;
+      color: var(--text-secondary);
+      flex-shrink: 0;
+    }
+
+    .activity-list {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      list-style: none;
+      overflow-x: auto;
+      flex: 1;
+      min-width: 0;
+    }
+
+    .activity-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+
+    .activity-status {
+      font-family: var(--font-code);
+      color: var(--text-muted);
+    }
+
+    .activity-item[data-activity-status="running"] .activity-progress,
+    .activity-item[data-activity-status="queued"] .activity-progress {
+      color: var(--accent-amber);
+    }
+
+    .activity-item[data-activity-status="succeeded"] .activity-receipt {
+      color: var(--accent-green);
+    }
+
+    .activity-item[data-activity-status="failed"] .activity-detail {
+      color: var(--accent-red);
+    }
+
+    .activity-cancel {
+      padding: 2px 8px;
+      font-size: 11px;
     }
   </style>
 </head>
@@ -981,8 +1032,10 @@
   </div>
 
   <aside class="activity-strip" id="activityStrip" data-surface="activity">
-    <span>Activity</span>
-    <span class="empty-verb">No in-flight work.</span>
+    <h2 class="activity-heading">Activity</h2>
+    <ol class="activity-list" id="activityList" data-activity-list>
+      <li class="empty-verb" data-activity-empty>No in-flight work.</li>
+    </ol>
   </aside>
 
   <!-- Settings sheet over the Shell -->
@@ -1108,6 +1161,7 @@
     let currentOpportunityIndex = null;
     let homeWorkspaceData = null;
 
+    const ACTIVITY_KINDS = ["assessment", "preparation", "verification", "publication"];
     const STRATA_LATER = ["candidate", "checks", "grade", "receipt", "publish"];
     const EMPTY_STRATA = {
       problem: "Assess this Project to surface an Opportunity, or excavate a line range.",
@@ -1162,6 +1216,7 @@
 
       // Load Home Workspace
       await refreshHomeWorkspace();
+      await refreshActivityCenter();
     });
 
     function showHomeView() {
@@ -1293,6 +1348,7 @@
             loadFile(site.tracked_files[0]);
           }
           await refreshHomeWorkspace();
+          await refreshActivityCenter();
         }
       } catch (err) {
         alert("Failed to open site: " + err);
@@ -1631,6 +1687,13 @@
       if (assessBtn) assessBtn.classList.add("in-flight");
       const roster = document.getElementById("opportunityRoster");
       roster.innerHTML = '<p class="empty-verb">Assessing project…</p>';
+      renderActivityCenter([{
+        id: "in-flight-assessment",
+        kind: "assessment",
+        title: "Assess Project",
+        status: "running",
+        detail: null
+      }]);
       try {
         const report = await invokeBackend("assess_project", {
           projectPath: currentSite.root_path,
@@ -1648,6 +1711,7 @@
         roster.innerHTML = '<p class="empty-verb">Assessment failed. ' + escapeHtml(String(err)) + ' Open a project and try again.</p>';
       } finally {
         if (assessBtn) assessBtn.classList.remove("in-flight");
+        await refreshActivityCenter();
       }
     }
 
@@ -1752,6 +1816,67 @@
         await refreshHomeWorkspace();
       } catch (err) {
         alert("Failed to save note: " + err);
+      }
+    }
+
+    async function refreshActivityCenter() {
+      if (!currentSite || !currentSite.root_path) {
+        renderActivityCenter([]);
+        return;
+      }
+      try {
+        const records = await invokeBackend("list_project_activities", {
+          projectPath: currentSite.root_path
+        });
+        renderActivityCenter(records || []);
+      } catch (err) {
+        console.error("Activity refresh failed:", err);
+      }
+    }
+
+    function renderActivityCenter(records) {
+      const list = document.getElementById("activityList");
+      if (!list) return;
+      if (!records || records.length === 0) {
+        list.innerHTML = '<li class="empty-verb" data-activity-empty>No in-flight work.</li>';
+        return;
+      }
+      list.innerHTML = records.map(function (row) {
+        const status = row.status || "queued";
+        const kind = row.kind || ACTIVITY_KINDS[0];
+        const title = escapeHtml(row.title || kind);
+        const detail = row.detail ? '<span class="activity-detail">' + escapeHtml(row.detail) + '</span>' : '';
+        let extra = '';
+        if (status === "running" || status === "queued") {
+          extra = '<span class="activity-progress" data-activity-progress>In flight</span>';
+        } else if (status === "succeeded") {
+          extra = '<span class="activity-receipt" data-activity-receipt>Receipt</span>';
+        } else if (status === "failed") {
+          extra = '<span class="activity-detail">Failed</span>';
+        } else if (status === "cancelled") {
+          extra = '<span class="activity-detail">Cancelled</span>';
+        }
+        const canCancel = status === "running" || status === "queued";
+        const cancelBtn = canCancel
+          ? '<button type="button" class="activity-cancel small" onclick="cancelActivity(\'' + escapeHtml(row.id) + '\')">Cancel</button>'
+          : '';
+        return '<li class="activity-item" data-activity-id="' + escapeHtml(row.id || "") + '" data-activity-kind="' + escapeHtml(kind) + '" data-activity-status="' + escapeHtml(status) + '">'
+          + '<span class="activity-title">' + title + '</span>'
+          + '<span class="activity-status">' + escapeHtml(status) + '</span>'
+          + extra
+          + detail
+          + cancelBtn
+          + '</li>';
+      }).join("");
+    }
+
+    async function cancelActivity(id) {
+      if (!id) return;
+      try {
+        await invokeBackend("cancel_project_activity", { activityId: id });
+        await refreshActivityCenter();
+      } catch (err) {
+        console.error("Cancel activity failed:", err);
       }
     }
 
