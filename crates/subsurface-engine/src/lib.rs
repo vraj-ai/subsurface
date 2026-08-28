@@ -6,6 +6,7 @@ pub mod confidence;
 pub mod evidence;
 pub mod excavate;
 pub mod fixture;
+pub mod github;
 pub mod grade;
 pub mod mcp;
 pub mod oauth;

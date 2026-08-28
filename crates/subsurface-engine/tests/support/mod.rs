@@ -34,6 +34,7 @@ impl StubResponse {
         }
     }
 
+    #[allow(dead_code)]
     pub fn delayed(mut self, delay: Duration) -> Self {
         self.delay = delay;
         self
