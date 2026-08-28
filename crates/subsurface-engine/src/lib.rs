@@ -9,6 +9,7 @@ pub mod mcp;
 pub mod oauth;
 pub mod project;
 pub mod provider;
+pub mod receipt;
 pub mod report;
 pub mod runtime;
 pub mod site;

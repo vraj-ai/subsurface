@@ -1,3 +1,4 @@
+use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 use std::process::Command;
@@ -20,7 +21,7 @@ pub enum CandidateError {
     ProjectMutated,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct GitFingerprint {
     pub head: String,
     pub porcelain: String,

@@ -7,6 +7,7 @@ use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
 
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::candidate::{fingerprint_project, CandidateError, GitFingerprint};
@@ -161,7 +162,7 @@ impl IsolatedCommand {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub enum CommandOutcome {
     Succeeded,
     Failed,
