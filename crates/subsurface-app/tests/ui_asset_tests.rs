@@ -608,6 +608,165 @@ fn project_picker_is_roster_with_project_vocabulary() {
     );
 }
 
+#[test]
+fn shell_has_quality_rail_opportunities_assessment_activity() {
+    assert!(
+        UI_BUNDLE.contains("data-mode=\"picker\""),
+        "launch still opens the Project Picker before the Shell"
+    );
+    assert!(
+        UI_BUNDLE.contains("function showCodeView")
+            && (js_function_body(UI_BUNDLE, "showCodeView").contains("data-mode")
+                || js_function_body(UI_BUNDLE, "showCodeView").contains("dataset.mode")),
+        "opening a Project must enter one Shell mode"
+    );
+    let open_shell = js_function_body(UI_BUNDLE, "openProjectFromRoster");
+    assert!(
+        open_shell.contains("showCodeView") || open_shell.contains("showShell"),
+        "choosing a Project must open the Shell"
+    );
+
+    assert!(
+        !UI_BUNDLE.contains("Code Explorer"),
+        "after open, one Shell — not Workspace vs Code Explorer"
+    );
+    assert!(
+        !UI_BUNDLE.contains("Home Workspace"),
+        "after open, one Shell — not Workspace vs Code Explorer"
+    );
+    assert!(
+        !UI_BUNDLE.contains("id=\"btnNavCode\""),
+        "Excavate is not a Code Explorer room tab"
+    );
+    let shell_css = css_block(UI_BUNDLE, ".shell-layout");
+    assert!(
+        shell_css.contains("grid-template-columns") && !shell_css.contains("display: none"),
+        "the open Project is one Shell layout, not two rooms"
+    );
+
+    let header_end = UI_BUNDLE.find("</header>").expect("header missing");
+    let rail_pos = UI_BUNDLE
+        .find("data-surface=\"quality-rail\"")
+        .expect("Quality Rail surface missing");
+    assert!(
+        rail_pos < header_end,
+        "Quality Rail is a horizontal header instrument"
+    );
+    let rail = extract_surface(UI_BUNDLE, "quality-rail");
+    assert!(
+        rail.contains("quality-rail") && rail.contains("quality-rail-grade"),
+        "Quality Rail must show the overall Quality Grade"
+    );
+    assert!(
+        rail.contains("Incomplete"),
+        "Quality Rail must show Incomplete when measurements are missing"
+    );
+    let dimensions = attr_values(&rail, "data-dimension");
+    assert_eq!(
+        dimensions,
+        [
+            "correctness",
+            "tests",
+            "security",
+            "maintainability",
+            "simplicity",
+            "evidence"
+        ],
+        "Quality Rail must show the measured dimensions"
+    );
+    assert!(
+        rail.contains("data-grade=\"incomplete\""),
+        "missing dimensions stay visible as Incomplete"
+    );
+    let rail_token = css_block(TOKENS_CSS, ".quality-rail");
+    assert!(
+        rail_token.contains("display: flex") && !rail_token.contains("flex-direction: column"),
+        "Quality Rail is a horizontal header instrument, not a left spine"
+    );
+
+    let opportunities = extract_surface(UI_BUNDLE, "opportunities");
+    assert!(
+        opportunities.contains("Opportunities"),
+        "left column must be Opportunities at rest"
+    );
+    assert!(
+        opportunities.contains("opportunity-roster")
+            || opportunities.contains("id=\"opportunityRoster\""),
+        "left column lists Opportunities"
+    );
+    let assessment = extract_surface(UI_BUNDLE, "assessment");
+    assert!(
+        assessment.contains("Project Assessment"),
+        "center must land on Project Assessment"
+    );
+    assert!(
+        !assessment.contains("class=\"modal\"")
+            && !assessment.contains("data-overlay=\"sheet\"")
+            && !assessment.contains("sheet-overlay"),
+        "Project Assessment is not a modal"
+    );
+    assert!(
+        !UI_BUNDLE.contains("id=\"reportModal\""),
+        "Project Assessment must not be trapped in a modal"
+    );
+
+    let opp_pos = UI_BUNDLE
+        .find("data-surface=\"opportunities\"")
+        .expect("opportunities surface missing");
+    let assess_pos = UI_BUNDLE
+        .find("data-surface=\"assessment\"")
+        .expect("assessment surface missing");
+    let shell_pos = UI_BUNDLE
+        .find("id=\"codeView\"")
+        .expect("Shell chrome missing");
+    assert!(
+        shell_pos < opp_pos && opp_pos < assess_pos,
+        "left is Opportunities at rest; center lands on Project Assessment"
+    );
+    let layout_left = attr_values(&opportunities, "data-shell-region");
+    assert!(
+        layout_left.iter().any(|v| v == "left"),
+        "Opportunities occupy the left Shell region at rest"
+    );
+    assert!(
+        UI_BUNDLE[assess_pos.saturating_sub(240)..assess_pos + 120].contains("data-shell-region=\"center\"")
+            || attr_values(&assessment, "data-shell-region")
+                .iter()
+                .any(|v| v == "center"),
+        "Project Assessment occupies the center Shell region"
+    );
+
+    assert!(
+        UI_BUNDLE.contains("data-returns=\"picker\"")
+            && UI_BUNDLE.contains("function showProjectPicker"),
+        "a control returns to the Project Picker without quitting"
+    );
+    let back = js_function_body(UI_BUNDLE, "showProjectPicker");
+    assert!(
+        back.contains("picker") && !back.contains("window.close"),
+        "returning to the Project Picker must not quit"
+    );
+
+    let activity = extract_surface(UI_BUNDLE, "activity");
+    assert!(
+        activity.contains("activity-strip"),
+        "Activity strip presence matches #54"
+    );
+    let activity_pos = UI_BUNDLE
+        .find("data-surface=\"activity\"")
+        .expect("activity surface missing");
+    assert!(
+        activity_pos > assess_pos,
+        "Activity is a Shell sibling so navigation cannot unmount it"
+    );
+    assert!(
+        !assessment.contains("data-surface=\"activity\"")
+            && !opportunities.contains("data-surface=\"activity\""),
+        "Activity stays mounted in the Shell strip, not inside Assessment or Opportunities"
+    );
+}
+
+
 fn picker_mentions_site(markup: &str) -> bool {
     markup
         .split(|c: char| !c.is_ascii_alphabetic())
