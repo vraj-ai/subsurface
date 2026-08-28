@@ -314,7 +314,7 @@
     /* 3-Pane Explorer View */
     .explorer-container {
       display: grid;
-      grid-template-columns: 260px 1fr 440px;
+      grid-template-columns: 240px minmax(0, 1fr) 460px;
       flex: 1;
       height: 100%;
       overflow: hidden;
@@ -432,10 +432,6 @@
       flex: 1;
     }
 
-    .archaeology-panel {
-      border-right: none;
-      background: #12161d;
-    }
 
     .badge {
       display: inline-block;
@@ -616,22 +612,7 @@
       font-weight: 600;
     }
 
-    .filter-tab {
-      padding: 5px 12px;
-      border-radius: 6px;
-      background: var(--bg-dark);
-      border: 1px solid var(--border-color);
-      font-size: 11px;
-      cursor: pointer;
-      color: var(--text-secondary);
-    }
 
-    .filter-tab.active {
-      background: #1f2b3e;
-      color: var(--accent-blue);
-      border-color: var(--accent-blue);
-      font-weight: 600;
-    }
 
     .chip {
       padding: 2px 8px;
@@ -648,6 +629,94 @@
     .chip:hover {
       border-color: var(--accent-blue);
       color: var(--text-primary);
+    }
+
+    .strata-panel {
+      border-right: none;
+      border-left: 1px solid var(--border-color);
+    }
+
+    .opportunity-roster {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      max-height: 26%;
+      overflow-y: auto;
+      padding: 8px 12px;
+      border-bottom: 1px solid var(--border-color);
+      flex-shrink: 0;
+    }
+
+    .opportunity-row {
+      display: block;
+      width: 100%;
+      text-align: left;
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      padding: 8px 10px;
+      color: var(--text-primary);
+      cursor: pointer;
+    }
+
+    .opportunity-row:hover {
+      border-color: var(--accent-blue);
+    }
+
+    .opportunity-row.selected {
+      border-color: var(--accent-blue);
+      background: #1f2b3e;
+    }
+
+    .opportunity-row .path {
+      font-family: var(--font-code);
+      font-size: 11px;
+      color: var(--accent-blue);
+    }
+
+    .opportunity-row .meta {
+      font-size: 10px;
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+
+    .strata {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      flex: 1;
+      overflow-y: auto;
+      padding: 10px 12px 16px;
+    }
+
+    .strata-section {
+      display: block;
+      flex: 0 0 auto;
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      padding: 10px 12px;
+    }
+
+    .strata-heading {
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.4px;
+      text-transform: uppercase;
+      color: var(--text-secondary);
+      margin-bottom: 8px;
+    }
+
+    .strata-body {
+      font-size: 12px;
+      line-height: 1.5;
+      color: var(--text-primary);
+    }
+
+    .empty-verb {
+      color: var(--text-muted);
+      font-size: 12px;
+      line-height: 1.5;
     }
   </style>
 </head>
@@ -675,7 +744,7 @@
     </div>
 
     <div style="display: flex; align-items: center; gap: 10px;">
-      <button class="small" onclick="openSiteReportModal()">📊 Site Report</button>
+      <button class="small" onclick="assessProject()">Assess Project</button>
       <div id="activeModelPill" class="provider-pill" onclick="openSettingsModal()">
         <span>⚡ gpt-4o</span>
       </div>
@@ -766,17 +835,65 @@
         </div>
       </div>
 
-      <!-- Panel 3: Archaeology / Finding -->
-      <div class="panel archaeology-panel">
+      <!-- Panel 3: Opportunity detail (Strata) -->
+      <div class="panel strata-panel">
         <div class="panel-header">
-          <span>Archaeology</span>
-          <span id="confidenceBadge" class="badge badge-none">No Selection</span>
+          <span>Opportunity</span>
+          <span id="opportunityStateBadge" class="badge badge-none">No selection</span>
         </div>
-        <div class="panel-body" id="archaeologyBody">
-          <div style="color: var(--text-muted); text-align: center; margin-top: 40px; line-height: 1.6;">
-            Select a line range in the code viewer and press <strong>Excavate</strong> to uncover why it exists.
-          </div>
+        <div id="opportunityRoster" class="opportunity-roster">
+          <p class="empty-verb">Assess this Project to list Opportunities, or excavate a selected range.</p>
         </div>
+        <article id="opportunity-detail" class="strata" data-surface="strata">
+          <section class="strata-section" data-strata-section="problem">
+            <h2 class="strata-heading">Problem</h2>
+            <div class="strata-body" data-strata-body="problem">
+              <p class="empty-verb">Assess this Project to surface an Opportunity, or excavate a line range.</p>
+            </div>
+          </section>
+          <section class="strata-section" data-strata-section="finding">
+            <h2 class="strata-heading">Finding</h2>
+            <div class="strata-body" data-strata-body="finding">
+              <p class="empty-verb">Excavate the selected range to produce a Finding.</p>
+            </div>
+          </section>
+          <section class="strata-section" data-strata-section="evidence">
+            <h2 class="strata-heading">Evidence</h2>
+            <div class="strata-body" data-strata-body="evidence">
+              <p class="empty-verb">Evidence appears when a Finding cites commits, tests, or docs.</p>
+            </div>
+          </section>
+          <section class="strata-section" data-strata-section="candidate">
+            <h2 class="strata-heading">Candidate</h2>
+            <div class="strata-body" data-strata-body="candidate">
+              <p class="empty-verb">Prepare a candidate in a disposable clone. The active Project stays unchanged.</p>
+            </div>
+          </section>
+          <section class="strata-section" data-strata-section="checks">
+            <h2 class="strata-heading">Checks</h2>
+            <div class="strata-body" data-strata-body="checks">
+              <p class="empty-verb">Run checks on the prepared candidate after you approve the command allowlist.</p>
+            </div>
+          </section>
+          <section class="strata-section" data-strata-section="grade">
+            <h2 class="strata-heading">Grade</h2>
+            <div class="strata-body" data-strata-body="grade">
+              <p class="empty-verb">Grade stays Incomplete until required measurements exist.</p>
+            </div>
+          </section>
+          <section class="strata-section" data-strata-section="receipt">
+            <h2 class="strata-heading">Receipt</h2>
+            <div class="strata-body" data-strata-body="receipt">
+              <p class="empty-verb">An Improvement Receipt compares baseline and candidate after checks run.</p>
+            </div>
+          </section>
+          <section class="strata-section" data-strata-section="publish">
+            <h2 class="strata-heading">Publish</h2>
+            <div class="strata-body" data-strata-body="publish">
+              <p class="empty-verb">Preview the Work Item, then publish to GitHub. Auto-publish stays off until you enable it.</p>
+            </div>
+          </section>
+        </article>
       </div>
     </div>
   </div>
@@ -869,56 +986,6 @@
     </div>
   </div>
 
-  <!-- Site Report Modal -->
-  <div class="modal" id="reportModal">
-    <div class="modal-content" style="width: 800px;">
-      <div class="modal-header">
-        <span>Site Report — Read-Only Repository Archaeology</span>
-        <button onclick="closeModal('reportModal')">✕</button>
-      </div>
-      <div class="modal-body">
-        <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 12px;">
-          The Site Report runs the Excavate engine across your repository to identify areas requiring archaeological context:
-        </div>
-
-        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 12px;">
-          <div style="background: rgba(248, 81, 73, 0.08); border: 1px solid rgba(248, 81, 73, 0.3); border-radius: 6px; padding: 8px 10px;">
-            <div style="font-weight: 600; color: #f85149; font-size: 11px; margin-bottom: 2px;">🚩 Dead Workarounds</div>
-            <div style="font-size: 11px; color: var(--text-muted);">Workarounds whose linked issue or bug receipt was later closed/resolved in git history.</div>
-          </div>
-          <div style="background: rgba(110, 118, 129, 0.08); border: 1px solid rgba(110, 118, 129, 0.3); border-radius: 6px; padding: 8px 10px;">
-            <div style="font-weight: 600; color: #8b949e; font-size: 11px; margin-bottom: 2px;">❓ No Rationale</div>
-            <div style="font-size: 11px; color: var(--text-muted);">Code introduced with generic commits ('fix'/'wip') with zero recorded docs or tests.</div>
-          </div>
-          <div style="background: rgba(210, 153, 34, 0.08); border: 1px solid rgba(210, 153, 34, 0.3); border-radius: 6px; padding: 8px 10px;">
-            <div style="font-weight: 600; color: #e3b341; font-size: 11px; margin-bottom: 2px;">🧪 Untested Code</div>
-            <div style="font-size: 11px; color: var(--text-muted);">Code with no co-committed tests found anywhere in change history.</div>
-          </div>
-        </div>
-
-        <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 12px;">
-          <input type="text" id="reportDirectoryFilter" placeholder="Filter by directory prefix (e.g. crates/subsurface-engine/)" style="flex: 1;" />
-          <button onclick="estimateAndPreviewReport()">Update Estimate</button>
-        </div>
-
-        <div id="reportSummary" style="margin-bottom: 12px; font-size: 12px; color: var(--text-secondary);"></div>
-
-        <div id="reportCategoryTabs" style="display: none; gap: 6px; margin-bottom: 12px;">
-          <span class="filter-tab active" onclick="filterReportCategory('All')">All (<span id="countAll">0</span>)</span>
-          <span class="filter-tab" onclick="filterReportCategory('DeadWorkaround')">🚩 Dead Workarounds (<span id="countDead">0</span>)</span>
-          <span class="filter-tab" onclick="filterReportCategory('NoRationale')">❓ No Rationale (<span id="countNoRationale">0</span>)</span>
-          <span class="filter-tab" onclick="filterReportCategory('UntestedCode')">🧪 Untested (<span id="countUntested">0</span>)</span>
-        </div>
-
-        <div id="reportList" style="max-height: 48vh; overflow-y: auto;"></div>
-      </div>
-      <div class="modal-footer">
-        <button onclick="closeModal('reportModal')">Close</button>
-        <button class="primary" id="runReportBtn" onclick="runSiteReport()">Run Site Report</button>
-      </div>
-    </div>
-  </div>
-
   <script>
     let currentSite = null;
     let currentFile = "";
@@ -929,8 +996,20 @@
     let providerPresets = [];
     let activeSettings = null;
     let currentReport = null;
-    let activeCategoryFilter = "All";
+    let currentOpportunityIndex = null;
     let homeWorkspaceData = null;
+
+    const STRATA_LATER = ["candidate", "checks", "grade", "receipt", "publish"];
+    const EMPTY_STRATA = {
+      problem: "Assess this Project to surface an Opportunity, or excavate a line range.",
+      finding: "Excavate the selected range to produce a Finding.",
+      evidence: "Evidence appears when a Finding cites commits, tests, or docs.",
+      candidate: "Prepare a candidate in a disposable clone. The active Project stays unchanged.",
+      checks: "Run checks on the prepared candidate after you approve the command allowlist.",
+      grade: "Grade stays Incomplete until required measurements exist.",
+      receipt: "An Improvement Receipt compares baseline and candidate after checks run.",
+      publish: "Preview the Work Item, then publish to GitHub. Auto-publish stays off until you enable it."
+    };
 
     // Robust Tauri IPC helper
     async function invokeBackend(cmd, args = {}) {
@@ -1059,7 +1138,7 @@
           </div>
           <div class="project-actions" onclick="event.stopPropagation()">
             <button class="primary small" onclick="openProjectFromCard('${pathEscaped}')">Open Code</button>
-            <button class="small" onclick="openProjectAndReport('${pathEscaped}')">📊 Site Report</button>
+            <button class="small" onclick="openProjectAndAssess('${pathEscaped}')">Assess Project</button>
           </div>
         </div>
       `;
@@ -1079,9 +1158,9 @@
       showCodeView();
     }
 
-    async function openProjectAndReport(path) {
+    async function openProjectAndAssess(path) {
       await loadProject(path);
-      openSiteReportModal();
+      await assessProject();
     }
 
     async function openManualPath() {
@@ -1287,120 +1366,176 @@
       }
     }
 
+    function setStrataBody(name, html) {
+      const body = document.querySelector('[data-strata-body="' + name + '"]');
+      if (body) body.innerHTML = html;
+    }
+
+    function emptyVerb(text) {
+      return '<p class="empty-verb">' + escapeHtml(text) + '</p>';
+    }
+
+    function resetLaterStrata() {
+      STRATA_LATER.forEach(function (name) {
+        setStrataBody(name, emptyVerb(EMPTY_STRATA[name]));
+      });
+    }
+
+    function setOpportunityState(label, badgeClass) {
+      const badge = document.getElementById("opportunityStateBadge");
+      badge.innerText = label;
+      badge.className = "badge " + badgeClass;
+    }
+
+    function categoryLabel(category) {
+      if (category === "DeadWorkaround") return "Dead workaround";
+      if (category === "NoRationale") return "Missing rationale";
+      if (category === "UntestedCode") return "Test gap";
+      return category || "Opportunity";
+    }
+
     function renderFinding(f) {
-      const container = document.getElementById("archaeologyBody");
-      const badge = document.getElementById("confidenceBadge");
+      const conf = (f.why && f.why.confidence) ? f.why.confidence : "None";
+      setOpportunityState(conf, "badge-" + conf.toLowerCase());
 
-      const conf = f.why.confidence.toLowerCase();
-      badge.innerText = f.why.confidence;
-      badge.className = `badge badge-${conf}`;
-
-      let html = "";
-
-      // 1. Dead Workaround Alert Banner (if receipt found)
+      let problem = "";
       if (f.staleness && f.staleness.Stale) {
         const receipt = f.staleness.Stale.receipt;
-        html += `
-          <div class="alert-card dead-workaround">
-            <div style="font-weight: 700; font-size: 12px; margin-bottom: 4px; display: flex; align-items: center; gap: 6px;">
-              <span>🚩 DEAD WORKAROUND DETECTED (RECEIPT FOUND)</span>
-            </div>
-            <div style="font-size: 12px; color: var(--text-primary); margin-bottom: 6px;">
-              <strong>Receipt:</strong> ${escapeHtml(receipt.receipt_text)}
-            </div>
-            <div style="font-size: 11px; color: var(--text-muted);">
-              💡 <strong>Archaeological Insight:</strong> The constraint or upstream bug that originally required this workaround was resolved in git history. This code is a prime candidate for safe removal or cleanup.
-            </div>
-          </div>
-        `;
+        problem += '<div class="alert-card dead-workaround">';
+        problem += '<div style="font-weight: 700; font-size: 12px; margin-bottom: 4px;">Dead workaround</div>';
+        problem += '<div style="font-size: 12px; margin-bottom: 6px;">' + escapeHtml(receipt.receipt_text) + '</div>';
+        problem += '<div style="font-size: 11px; color: var(--text-muted);">The constraint this workaround existed for was later resolved. Removal is the candidate to verify.</div>';
+        problem += '</div>';
       }
-
-      // 2. No Rationale Alert Banner
-      if (f.why.confidence === "None") {
-        html += `
-          <div class="alert-card no-rationale">
-            <div style="font-weight: 700; font-size: 12px; margin-bottom: 4px;">
-              ❓ NO RECORDED RATIONALE
-            </div>
-            <div style="font-size: 11px; color: var(--text-secondary);">
-              All commits introducing this code used generic messages ('fix'/'wip') with zero co-committed tests or docs. Subsurface asserts no speculation.
-            </div>
-          </div>
-        `;
+      if (f.why && f.why.confidence === "None") {
+        problem += '<div class="alert-card no-rationale">';
+        problem += '<div style="font-weight: 700; font-size: 12px; margin-bottom: 4px;">Missing rationale</div>';
+        problem += '<div style="font-size: 11px; color: var(--text-secondary);">No recorded why. Subsurface asserts no speculation.</div>';
+        problem += '</div>';
       }
+      if (currentFile && selectedStartLine !== null) {
+        const start = Math.min(selectedStartLine, selectedEndLine);
+        const end = Math.max(selectedStartLine, selectedEndLine);
+        problem += '<div style="font-family: var(--font-code); font-size: 11px; color: var(--text-secondary); margin-top: 6px;">' + escapeHtml(currentFile) + ':' + start + '–' + end + '</div>';
+      }
+      setStrataBody("problem", problem || emptyVerb(EMPTY_STRATA.problem));
 
-      // 3. Why Rationale Card
-      html += `
-        <div class="card">
-          <div class="card-title">
-            <span>Why This Code Exists</span>
-            <span style="font-size: 9px; color: var(--accent-blue);">[Synthesized from Evidence]</span>
-          </div>
-          <div class="rationale-text">${escapeHtml(f.why.rationale)}</div>
-          <div style="font-size: 11px; color: var(--text-muted); font-style: italic;">
-            ${escapeHtml(f.why.confidence_explanation)}
-          </div>
-        </div>
+      let findingHtml = '<div class="rationale-text">' + escapeHtml(f.why.rationale) + '</div>';
+      findingHtml += '<div style="font-size: 11px; color: var(--text-muted); margin-bottom: 8px;">' + escapeHtml(f.why.confidence_explanation) + '</div>';
+      findingHtml += '<div style="font-size: 12px; margin-bottom: 6px;"><strong>First introduced:</strong> ';
+      findingHtml += (f.what_when.first_introduced_commit ? f.what_when.first_introduced_commit.substring(0, 7) : "Unknown");
+      findingHtml += ' by ' + escapeHtml(f.what_when.first_introduced_author || "Unknown");
+      findingHtml += ' (' + (f.what_when.first_introduced_timestamp || "Unknown") + ')</div>';
+      findingHtml += '<div style="font-size: 11px; color: var(--text-secondary);">' + escapeHtml(f.what_when.evolution_summary) + '</div>';
+      findingHtml += '<div style="margin-top: 10px;"><input type="text" id="userNoteInput" placeholder="Add a Field Note..." style="width: 100%; margin-bottom: 8px;" />';
+      findingHtml += '<button onclick="saveNote()">Save Field Note</button></div>';
+      setStrataBody("finding", findingHtml);
 
-        <div class="card">
-          <div class="card-title">What & When</div>
-          <div style="font-size: 12px; margin-bottom: 6px;">
-            <strong>First Introduced:</strong> ${f.what_when.first_introduced_commit ? f.what_when.first_introduced_commit.substring(0, 7) : 'Unknown'}
-            by ${escapeHtml(f.what_when.first_introduced_author || 'Unknown')} (${f.what_when.first_introduced_timestamp || 'Unknown'})
-          </div>
-          <div style="font-size: 11px; color: var(--text-secondary);">${escapeHtml(f.what_when.evolution_summary)}</div>
-        </div>
-
-        <div class="card">
-          <div class="card-title">Timeline (${f.what_when.timeline.length} Commits)</div>
-      `;
-
-      f.what_when.timeline.forEach(t => {
-        html += `
-          <div class="timeline-item">
-            <div style="font-weight: 600; font-size: 12px;">${escapeHtml(t.message.split('\n')[0])}</div>
-            <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 4px;">
-              ${t.commit_sha.substring(0, 7)} · ${escapeHtml(t.author)} · ${t.timestamp}
-            </div>
-            ${t.diff_hunk ? `<div class="diff-block">${escapeHtml(t.diff_hunk)}</div>` : ''}
-          </div>
-        `;
+      let evidenceHtml = '<div class="card-title">Timeline (' + f.what_when.timeline.length + ' commits)</div>';
+      f.what_when.timeline.forEach(function (t) {
+        evidenceHtml += '<div class="timeline-item">';
+        evidenceHtml += '<div style="font-weight: 600; font-size: 12px;">' + escapeHtml(t.message.split("\n")[0]) + '</div>';
+        evidenceHtml += '<div style="font-size: 11px; color: var(--text-muted); margin-bottom: 4px;">';
+        evidenceHtml += t.commit_sha.substring(0, 7) + ' · ' + escapeHtml(t.author) + ' · ' + t.timestamp + '</div>';
+        if (t.diff_hunk) {
+          evidenceHtml += '<div class="diff-block">' + escapeHtml(t.diff_hunk) + '</div>';
+        }
+        evidenceHtml += '</div>';
       });
-
-      html += `</div>`;
-
       if (f.what_when.related_tests.length > 0 || f.what_when.related_docs.length > 0) {
-        html += `<div class="card"><div class="card-title">Co-Committed Tests & Docs (Heuristic)</div>`;
-        f.what_when.related_tests.forEach(t => {
-          html += `<div style="font-family: var(--font-code); font-size: 11px; color: #3fb950; margin-bottom: 3px;">✓ [Test] ${escapeHtml(t)}</div>`;
+        evidenceHtml += '<div style="margin-top: 8px; font-size: 11px; color: var(--text-muted);">Co-committed tests and docs are a heuristic, not coverage.</div>';
+        f.what_when.related_tests.forEach(function (t) {
+          evidenceHtml += '<div style="font-family: var(--font-code); font-size: 11px; color: #3fb950; margin-bottom: 3px;">[Test] ' + escapeHtml(t) + '</div>';
         });
-        f.what_when.related_docs.forEach(d => {
-          html += `<div style="font-family: var(--font-code); font-size: 11px; color: #58a6ff; margin-bottom: 3px;">📄 [Doc] ${escapeHtml(d)}</div>`;
+        f.what_when.related_docs.forEach(function (d) {
+          evidenceHtml += '<div style="font-family: var(--font-code); font-size: 11px; color: #58a6ff; margin-bottom: 3px;">[Doc] ' + escapeHtml(d) + '</div>';
         });
-        html += `</div>`;
       }
-
       if (f.budget_summary && f.budget_summary.excluded && f.budget_summary.excluded.length > 0) {
-        html += `
-          <div class="card">
-            <div class="card-title">Evidence Budget (${f.budget_summary.total_considered} considered, ${f.budget_summary.excluded.length} excluded)</div>
-            <div style="font-size: 11px; color: var(--text-muted);">
-              ${f.budget_summary.excluded.map(ex => `<div>- Commit ${ex.commit_sha.substring(0, 7)}: ${escapeHtml(ex.message_summary)} (${escapeHtml(ex.reason)})</div>`).join('')}
-            </div>
-          </div>
-        `;
+        evidenceHtml += '<div style="margin-top: 8px; font-size: 11px; color: var(--text-muted);">Evidence budget: ' + f.budget_summary.total_considered + ' considered, ' + f.budget_summary.excluded.length + ' excluded</div>';
+        f.budget_summary.excluded.forEach(function (ex) {
+          evidenceHtml += '<div style="font-size: 11px; color: var(--text-muted);">- ' + ex.commit_sha.substring(0, 7) + ': ' + escapeHtml(ex.message_summary) + ' (' + escapeHtml(ex.reason) + ')</div>';
+        });
       }
+      setStrataBody("evidence", evidenceHtml);
+      resetLaterStrata();
+    }
 
-      html += `
-        <div class="card">
-          <div class="card-title">Save to Field Notes</div>
-          <input type="text" id="userNoteInput" placeholder="Add your notes..." style="width: 100%; margin-bottom: 8px;" />
-          <button onclick="saveNote()">Save Field Note</button>
-        </div>
-      `;
+    function renderOpportunity(entry, index) {
+      currentOpportunityIndex = index;
+      document.querySelectorAll(".opportunity-row").forEach(function (el) {
+        el.classList.toggle("selected", Number(el.dataset.index) === index);
+      });
+      const label = categoryLabel(entry.category);
+      const problem = '<div style="font-weight: 600; margin-bottom: 4px;">' + escapeHtml(label) + '</div>'
+        + '<div style="margin-bottom: 6px;">' + escapeHtml(entry.description) + '</div>'
+        + '<div style="font-family: var(--font-code); font-size: 11px; color: var(--text-secondary);">'
+        + escapeHtml(entry.file_path) + ':' + entry.line_range.start + '–' + entry.line_range.end + '</div>';
+      if (entry.finding) {
+        renderFinding(entry.finding);
+      } else {
+        setStrataBody("finding", emptyVerb(EMPTY_STRATA.finding));
+        setStrataBody("evidence", emptyVerb(EMPTY_STRATA.evidence));
+        resetLaterStrata();
+      }
+      setStrataBody("problem", problem);
+      setOpportunityState("Detected", "badge-inferred");
+    }
 
-      container.innerHTML = html;
-      container.scrollTop = 0;
+    function renderOpportunityRoster() {
+      const roster = document.getElementById("opportunityRoster");
+      if (!currentReport || !currentReport.entries || currentReport.entries.length === 0) {
+        roster.innerHTML = '<p class="empty-verb">No Opportunities yet. Assess this Project, or excavate a selected range.</p>';
+        return;
+      }
+      roster.innerHTML = currentReport.entries.map(function (e, i) {
+        const selected = i === currentOpportunityIndex ? " selected" : "";
+        return '<button type="button" class="opportunity-row' + selected + '" data-index="' + i + '" onclick="selectOpportunity(' + i + ')">'
+          + '<div class="path">' + escapeHtml(e.file_path) + ':' + e.line_range.start + '–' + e.line_range.end + '</div>'
+          + '<div class="meta">' + escapeHtml(categoryLabel(e.category)) + ' · Detected</div>'
+          + '</button>';
+      }).join("");
+    }
+
+    async function selectOpportunity(index) {
+      if (!currentReport) return;
+      const entry = currentReport.entries[index];
+      showCodeView();
+      await loadFile(entry.file_path);
+      selectedStartLine = entry.line_range.start;
+      selectedEndLine = entry.line_range.end;
+      updateSelectionUI();
+      document.querySelectorAll(".code-row").forEach(function (row) {
+        const num = parseInt(row.dataset.line);
+        row.classList.toggle("selected", num >= entry.line_range.start && num <= entry.line_range.end);
+      });
+      renderOpportunity(entry, index);
+    }
+
+    async function assessProject() {
+      if (!currentSite) {
+        alert("Open a Project first.");
+        return;
+      }
+      showCodeView();
+      const roster = document.getElementById("opportunityRoster");
+      roster.innerHTML = '<p class="empty-verb">Assessing Project…</p>';
+      try {
+        const report = await invokeBackend("assess_project", {
+          projectPath: currentSite.root_path,
+          filterPrefix: null
+        });
+        currentReport = report;
+        currentOpportunityIndex = report.entries && report.entries.length ? 0 : null;
+        renderOpportunityRoster();
+        if (currentOpportunityIndex !== null) {
+          await selectOpportunity(currentOpportunityIndex);
+        } else {
+          setStrataBody("problem", emptyVerb("Assessment finished with no Opportunities. Excavate a selected range to start a Finding."));
+        }
+      } catch (err) {
+        roster.innerHTML = '<p class="empty-verb">Assessment failed. ' + escapeHtml(String(err)) + ' Open a Project and try again.</p>';
+      }
     }
 
     function renderPresets() {
@@ -1489,124 +1624,6 @@
         resSpan.innerText = "✗ Failed: " + err;
         resSpan.style.color = "var(--accent-red)";
       }
-    }
-
-    async function openSiteReportModal() {
-      if (!currentSite) {
-        alert("Please select or open a repository first.");
-        return;
-      }
-      document.getElementById("reportModal").classList.add("active");
-      await estimateAndPreviewReport();
-    }
-
-    async function estimateAndPreviewReport() {
-      if (!currentSite) return;
-      const prefix = document.getElementById("reportDirectoryFilter").value.trim() || null;
-      try {
-        const estimate = await invokeBackend("estimate_report", {
-          sitePath: currentSite.root_path,
-          filterPrefix: prefix
-        });
-        document.getElementById("reportSummary").innerHTML = `
-          <div><strong>Files in scope:</strong> ${estimate.file_count} &nbsp;|&nbsp; <strong>Estimated time:</strong> ~${Math.round(estimate.estimated_duration_secs)}s</div>
-        `;
-      } catch (e) {
-        console.error(e);
-      }
-    }
-
-    async function runSiteReport() {
-      if (!currentSite) return;
-      const prefix = document.getElementById("reportDirectoryFilter").value.trim() || null;
-      const btn = document.getElementById("runReportBtn");
-      btn.disabled = true;
-      btn.innerText = "Running Archaeology Pass...";
-
-      try {
-        const report = await invokeBackend("generate_report", {
-          sitePath: currentSite.root_path,
-          filterPrefix: prefix
-        });
-        currentReport = report;
-
-        let deadCount = report.entries.filter(e => e.category === "DeadWorkaround").length;
-        let noRationaleCount = report.entries.filter(e => e.category === "NoRationale").length;
-        let untestedCount = report.entries.filter(e => e.category === "UntestedCode").length;
-
-        document.getElementById("countAll").innerText = report.entries.length;
-        document.getElementById("countDead").innerText = deadCount;
-        document.getElementById("countNoRationale").innerText = noRationaleCount;
-        document.getElementById("countUntested").innerText = untestedCount;
-        document.getElementById("reportCategoryTabs").style.display = "flex";
-
-        renderReportList();
-      } catch (err) {
-        alert("Report generation failed: " + err);
-      } finally {
-        btn.disabled = false;
-        btn.innerText = "Run Site Report";
-      }
-    }
-
-    function filterReportCategory(cat) {
-      activeCategoryFilter = cat;
-      document.querySelectorAll(".filter-tab").forEach(el => el.classList.remove("active"));
-      event.target.classList.add("active");
-      renderReportList();
-    }
-
-    function renderReportList() {
-      if (!currentReport) return;
-      const listDiv = document.getElementById("reportList");
-      let entries = currentReport.entries;
-      if (activeCategoryFilter !== "All") {
-        entries = entries.filter(e => e.category === activeCategoryFilter);
-      }
-
-      if (entries.length === 0) {
-        listDiv.innerHTML = `<div style="padding: 20px; color: var(--text-muted); text-align: center;">No findings in this category.</div>`;
-        return;
-      }
-
-      let html = "";
-      entries.forEach(e => {
-        let badgeClass = "badge-none";
-        let icon = "❓";
-        if (e.category === "DeadWorkaround") {
-          badgeClass = "badge-stated";
-          icon = "🚩";
-        } else if (e.category === "UntestedCode") {
-          badgeClass = "badge-inferred";
-          icon = "🧪";
-        }
-
-        html += `
-          <div class="card" style="margin-top: 8px; cursor: pointer;" onclick="loadAndExcavate('${e.file_path}', ${e.line_range.start}, ${e.line_range.end})">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-              <span style="font-weight: 600; color: var(--accent-blue); font-family: var(--font-code);">${icon} ${escapeHtml(e.file_path)}:${e.line_range.start}-${e.line_range.end}</span>
-              <span class="badge ${badgeClass}">${e.category}</span>
-            </div>
-            <div style="font-size: 11px; color: var(--text-primary); margin-bottom: 4px;">${escapeHtml(e.description)}</div>
-            <div style="font-size: 10px; color: var(--text-muted);">Click to jump to code & inspect full archaeological evidence →</div>
-          </div>
-        `;
-      });
-      listDiv.innerHTML = html;
-    }
-
-    async function loadAndExcavate(filePath, start, end) {
-      closeModal('reportModal');
-      showCodeView();
-      await loadFile(filePath);
-      selectedStartLine = start;
-      selectedEndLine = end;
-      updateSelectionUI();
-      document.querySelectorAll(".code-row").forEach(row => {
-        const num = parseInt(row.dataset.line);
-        row.classList.toggle("selected", num >= start && num <= end);
-      });
-      await previewPayload();
     }
 
     async function saveNote() {
