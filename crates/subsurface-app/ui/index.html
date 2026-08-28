@@ -614,11 +614,12 @@
       display: flex;
       flex-direction: column;
       gap: 4px;
-      max-height: 26%;
+      max-height: none;
       overflow-y: auto;
       padding: 8px 12px;
-      border-bottom: 1px solid var(--border-color);
-      flex-shrink: 0;
+      border-bottom: none;
+      flex: 1;
+      min-height: 0;
     }
 
     .opportunity-row {
@@ -830,6 +831,71 @@
       padding: 2px 8px;
       font-size: 11px;
     }
+
+    .shell-layout {
+      display: grid;
+      grid-template-columns: 280px minmax(0, 1fr);
+      flex: 1;
+      min-height: 0;
+      height: 100%;
+      overflow: hidden;
+    }
+
+    .shell-center {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      height: 100%;
+      overflow: hidden;
+      background: var(--bg-panel);
+    }
+
+    .project-assessment {
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .assessment-heading {
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      color: var(--text-secondary);
+    }
+
+    .assessment-body {
+      padding: 12px;
+    }
+
+    .assessment-dimensions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      list-style: none;
+      margin: 8px 0 12px;
+      padding: 0;
+      font-size: 11px;
+      color: var(--text-secondary);
+    }
+
+    .assessment-dimensions li[data-grade="incomplete"] {
+      color: var(--text-muted);
+    }
+
+    .excavate-surfaces {
+      display: none;
+    }
+
+    .return-picker {
+      background: transparent;
+      border: 1px solid var(--border-color);
+      color: var(--text-secondary);
+      padding: 5px 12px;
+      border-radius: 6px;
+      font-size: 12px;
+    }
   </style>
 </head>
 <body data-mode="picker">
@@ -839,25 +905,18 @@
         <span>Subsurface</span>
         <span class="brand-tag">v1.1</span>
       </div>
-      <div class="nav-tabs shell-chrome">
-        <button class="nav-btn" id="btnNavPicker" onclick="showProjectPicker()">
-          <span>Projects</span>
-        </button>
-        <button class="nav-btn" id="btnNavCode" onclick="showCodeView()">
-          <span>Excavate</span>
-        </button>
-      </div>
+      <button type="button" class="return-picker shell-chrome" data-returns="picker" onclick="showProjectPicker()">Project Picker</button>
     </div>
 
-    <div class="quality-rail shell-chrome" aria-label="Quality rail">
-      <span class="quality-rail-grade" data-grade="incomplete">Incomplete</span>
-      <ol class="quality-rail-layers">
-        <li data-dimension="correctness">Correctness</li>
-        <li data-dimension="tests">Test protection</li>
-        <li data-dimension="security">Security</li>
-        <li data-dimension="maintainability">Maintainability</li>
-        <li data-dimension="simplicity">Simplicity</li>
-        <li data-dimension="evidence">Evidence fit</li>
+    <div class="quality-rail shell-chrome" data-surface="quality-rail" aria-label="Quality Rail">
+      <span class="quality-rail-grade" id="qualityRailGrade" data-grade="incomplete">Incomplete</span>
+      <ol class="quality-rail-layers" id="qualityRailLayers">
+        <li data-dimension="correctness" data-grade="incomplete">Correctness · Incomplete</li>
+        <li data-dimension="tests" data-grade="incomplete">Test protection · Incomplete</li>
+        <li data-dimension="security" data-grade="incomplete">Security · Incomplete</li>
+        <li data-dimension="maintainability" data-grade="incomplete">Maintainability · Incomplete</li>
+        <li data-dimension="simplicity" data-grade="incomplete">Simplicity · Incomplete</li>
+        <li data-dimension="evidence" data-grade="incomplete">Evidence fit · Incomplete</li>
       </ol>
     </div>
 
@@ -909,50 +968,38 @@
     </div>
   </main>
 
-  <!-- View 2: 3-Pane Explorer -->
+  <!-- One Shell after a Project is chosen -->
   <div class="view-container" id="codeView">
-    <div class="explorer-container">
-      <!-- Panel 1: Repository Files -->
-      <div class="panel">
+    <div class="shell-layout">
+      <aside class="panel" data-surface="opportunities" data-shell-region="left">
         <div class="panel-header">
-          <span>Files</span>
-          <span id="fileCount" style="font-size: 10px; color: var(--text-muted);">0 files</span>
-        </div>
-        <div class="panel-body">
-          <input type="text" id="fileFilter" placeholder="Filter files..." style="width: 100%; margin-bottom: 8px;" oninput="filterFiles()" />
-          <div id="siteMeta" style="font-size: 11px; color: var(--text-muted); margin-bottom: 8px;"></div>
-          <ul class="file-tree" id="fileList">
-            <li style="color: var(--text-muted); padding: 8px;">No Site opened. Return to Home Workspace to select a repository.</li>
-          </ul>
-        </div>
-      </div>
-
-      <!-- Panel 2: Code Viewer -->
-      <div class="code-viewer-container">
-        <div class="code-toolbar">
-          <div style="font-family: var(--font-code); font-size: 12px; color: var(--text-secondary);" id="currentFilePath">No file selected</div>
-          <div style="display: flex; align-items: center; gap: 8px;">
-            <span style="font-size: 11px; color: var(--text-muted);" id="selectionLabel">Lines: None</span>
-            <button class="small" onclick="previewPayload()">Preview Payload</button>
-            <button class="primary small" id="excavateBtn" onclick="previewPayload()">Excavate</button>
-          </div>
-        </div>
-        <div class="code-content" id="codeContainer">
-          <div style="padding: 32px; color: var(--text-muted); text-align: center;">
-            Select a file from the repository to inspect code, then select lines to Excavate.
-          </div>
-        </div>
-      </div>
-
-      <!-- Panel 3: Opportunity detail (Strata) -->
-      <div class="panel strata-panel">
-        <div class="panel-header">
-          <span>Opportunity</span>
+          <span>Opportunities</span>
           <span id="opportunityStateBadge" class="badge badge-none">No selection</span>
         </div>
         <div id="opportunityRoster" class="opportunity-roster">
           <p class="empty-verb">Assess this Project to list Opportunities, or excavate a selected range.</p>
         </div>
+      </aside>
+
+      <div class="shell-center" data-shell-region="center">
+        <article class="project-assessment" data-surface="assessment" data-shell-region="center" id="projectAssessment">
+          <div class="panel-header">
+            <h2 class="assessment-heading">Project Assessment</h2>
+          </div>
+          <div class="assessment-body">
+            <span class="quality-rail-grade" data-grade="incomplete" id="assessmentOverallGrade">Incomplete</span>
+            <ul class="assessment-dimensions" id="assessmentDimensions">
+              <li data-dimension="correctness" data-grade="incomplete">Correctness · Incomplete</li>
+              <li data-dimension="tests" data-grade="incomplete">Test protection · Incomplete</li>
+              <li data-dimension="security" data-grade="incomplete">Security · Incomplete</li>
+              <li data-dimension="maintainability" data-grade="incomplete">Maintainability · Incomplete</li>
+              <li data-dimension="simplicity" data-grade="incomplete">Simplicity · Incomplete</li>
+              <li data-dimension="evidence" data-grade="incomplete">Evidence fit · Incomplete</li>
+            </ul>
+            <p class="empty-verb" id="assessmentEmpty">Assess this Project to measure Quality Grade and list Opportunities.</p>
+            <div id="assessmentSummary"></div>
+          </div>
+        </article>
         <article id="opportunity-detail" class="strata" data-surface="strata">
           <section class="strata-section" data-strata-section="problem">
             <h2 class="strata-heading">Problem</h2>
@@ -1003,6 +1050,37 @@
             </div>
           </section>
         </article>
+      </div>
+    </div>
+
+    <div class="excavate-surfaces" id="excavateSurfaces" hidden>
+      <div class="panel">
+        <div class="panel-header">
+          <span>Files</span>
+          <span id="fileCount" style="font-size: 10px; color: var(--text-muted);">0 files</span>
+        </div>
+        <div class="panel-body">
+          <input type="text" id="fileFilter" placeholder="Filter files..." style="width: 100%; margin-bottom: 8px;" oninput="filterFiles()" />
+          <div id="siteMeta" style="font-size: 11px; color: var(--text-muted); margin-bottom: 8px;"></div>
+          <ul class="file-tree" id="fileList">
+            <li style="color: var(--text-muted); padding: 8px;">Open a Project to inspect files. Direct excavate stays on this Shell.</li>
+          </ul>
+        </div>
+      </div>
+      <div class="code-viewer-container">
+        <div class="code-toolbar">
+          <div style="font-family: var(--font-code); font-size: 12px; color: var(--text-secondary);" id="currentFilePath">No file selected</div>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="font-size: 11px; color: var(--text-muted);" id="selectionLabel">Lines: None</span>
+            <button class="small" onclick="previewPayload()">Preview Payload</button>
+            <button class="primary small" id="excavateBtn" onclick="previewPayload()">Excavate</button>
+          </div>
+        </div>
+        <div class="code-content" id="codeContainer">
+          <div style="padding: 32px; color: var(--text-muted); text-align: center;">
+            Select a file from the repository to inspect code, then select lines to Excavate.
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -1190,7 +1268,7 @@
         console.log("Settings init error:", e);
       }
 
-      // Load Home Workspace
+      // Load Project Picker
       await refreshProjectPicker();
       await refreshActivityCenter();
     });
@@ -1199,10 +1277,6 @@
       document.body.dataset.mode = "picker";
       document.getElementById("homeView").classList.add("active");
       document.getElementById("codeView").classList.remove("active");
-      const pickerBtn = document.getElementById("btnNavPicker");
-      const codeBtn = document.getElementById("btnNavCode");
-      if (pickerBtn) pickerBtn.classList.add("active");
-      if (codeBtn) codeBtn.classList.remove("active");
     }
 
     function showHomeView() {
@@ -1213,10 +1287,6 @@
       document.body.dataset.mode = "shell";
       document.getElementById("homeView").classList.remove("active");
       document.getElementById("codeView").classList.add("active");
-      const pickerBtn = document.getElementById("btnNavPicker");
-      const codeBtn = document.getElementById("btnNavCode");
-      if (pickerBtn) pickerBtn.classList.remove("active");
-      if (codeBtn) codeBtn.classList.add("active");
     }
 
     function showPickerError(message) {
@@ -1313,6 +1383,8 @@
           if (project.tracked_files.length > 0) {
             loadFile(project.tracked_files[0]);
           }
+          renderQualityRail(null);
+          renderProjectAssessment(null);
           await refreshProjectPicker();
           await refreshActivityCenter();
         }
@@ -1616,7 +1688,61 @@
       setOpportunityState("Detected", "badge-inferred");
     }
 
+    const QUALITY_DIMENSIONS = [
+      ["correctness", "Correctness"],
+      ["tests", "Test protection"],
+      ["security", "Security"],
+      ["maintainability", "Maintainability"],
+      ["simplicity", "Simplicity"],
+      ["evidence", "Evidence fit"]
+    ];
+
+    function renderQualityRail(report) {
+      const gradeEl = document.getElementById("qualityRailGrade");
+      const layers = document.getElementById("qualityRailLayers");
+      const overall = "Incomplete";
+      if (gradeEl) {
+        gradeEl.dataset.grade = "incomplete";
+        gradeEl.textContent = overall;
+      }
+      if (layers) {
+        layers.innerHTML = QUALITY_DIMENSIONS.map(function (pair) {
+          return '<li data-dimension="' + pair[0] + '" data-grade="incomplete">' + pair[1] + ' · Incomplete</li>';
+        }).join("");
+      }
+      const assessGrade = document.getElementById("assessmentOverallGrade");
+      if (assessGrade) {
+        assessGrade.dataset.grade = "incomplete";
+        assessGrade.textContent = overall;
+      }
+      const dims = document.getElementById("assessmentDimensions");
+      if (dims) {
+        dims.innerHTML = QUALITY_DIMENSIONS.map(function (pair) {
+          return '<li data-dimension="' + pair[0] + '" data-grade="incomplete">' + pair[1] + ' · Incomplete</li>';
+        }).join("");
+      }
+    }
+
+    function renderProjectAssessment(report) {
+      const summary = document.getElementById("assessmentSummary");
+      const empty = document.getElementById("assessmentEmpty");
+      if (!summary) return;
+      if (!report) {
+        if (empty) empty.hidden = false;
+        summary.innerHTML = "";
+        return;
+      }
+      if (empty) empty.hidden = true;
+      const count = (report.entries || []).length;
+      const head = report.head_commit ? String(report.head_commit).substring(0, 7) : "None";
+      summary.innerHTML =
+        "<div><strong>HEAD:</strong> " + escapeHtml(head) + "</div>" +
+        "<div>" + (report.total_files_scanned || 0) + " files scanned · " + count + " Opportunities</div>" +
+        "<div>Assessed " + escapeHtml(report.generated_at || "") + "</div>";
+    }
+
     function renderOpportunityRoster() {
+
       const roster = document.getElementById("opportunityRoster");
       if (!currentReport || !currentReport.entries || currentReport.entries.length === 0) {
         roster.innerHTML = '<p class="empty-verb">No Opportunities yet. Assess this Project, or excavate a selected range.</p>';
@@ -1671,8 +1797,10 @@
         currentReport = report;
         currentOpportunityIndex = report.entries && report.entries.length ? 0 : null;
         renderOpportunityRoster();
+        renderProjectAssessment(report);
+        renderQualityRail(report);
         if (currentOpportunityIndex !== null) {
-          await selectOpportunity(currentOpportunityIndex);
+          renderOpportunity(report.entries[currentOpportunityIndex], currentOpportunityIndex);
         } else {
           setStrataBody("problem", emptyVerb("Assessment finished with no Opportunities. Excavate a selected range to start a Finding."));
         }
