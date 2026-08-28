@@ -718,6 +718,94 @@
       font-size: 12px;
       line-height: 1.5;
     }
+
+    .sheet-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.45);
+      align-items: stretch;
+      justify-content: flex-end;
+      z-index: 100;
+    }
+
+    .sheet-overlay.active {
+      display: flex;
+    }
+
+    .sheet {
+      background: var(--bg-panel);
+      border-left: 1px solid var(--border-color);
+      width: min(480px, 100%);
+      height: 100%;
+      max-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .sheet-header {
+      padding: 12px 16px;
+      background: var(--bg-panel-header);
+      font-weight: 600;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-shrink: 0;
+    }
+
+    .sheet-title {
+      font-size: 14px;
+      font-weight: 600;
+    }
+
+    .sheet-body {
+      padding: 16px;
+      overflow-y: auto;
+      line-height: 1.4;
+      color: #c9d1d9;
+      flex: 1;
+    }
+
+    .sheet-footer {
+      padding: 12px 16px;
+      background: var(--bg-panel-header);
+      border-top: 1px solid var(--border-color);
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+
+    .settings-section {
+      display: block;
+      margin-bottom: 20px;
+    }
+
+    .settings-heading {
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.4px;
+      color: var(--text-secondary);
+      margin-bottom: 8px;
+    }
+
+    .activity-strip {
+      position: fixed;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      z-index: 110;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 6px 16px;
+      background: var(--bg-panel-header);
+      border-top: 1px solid var(--border-color);
+      font-size: 11px;
+      color: var(--text-secondary);
+    }
   </style>
 </head>
 <body>
@@ -898,93 +986,120 @@
     </div>
   </div>
 
-  <!-- Settings & Providers Modal -->
-  <div class="modal" id="settingsModal">
-    <div class="modal-content">
-      <div class="modal-header">
-        <span>Provider Settings & Inference Auth</span>
-        <button onclick="closeModal('settingsModal')">✕</button>
+  <aside class="activity-strip" id="activityStrip" data-surface="activity">
+    <span>Activity</span>
+    <span class="empty-verb">No in-flight work.</span>
+  </aside>
+
+  <!-- Settings sheet over the Shell -->
+  <article class="sheet-overlay" id="settingsSheet" data-surface="settings" data-overlay="sheet">
+    <div class="sheet" role="dialog" aria-labelledby="settingsSheetTitle">
+      <div class="sheet-header">
+        <span class="sheet-title" id="settingsSheetTitle">Settings</span>
+        <button type="button" onclick="closeModal('settingsSheet')">Close</button>
       </div>
-      <div class="modal-body">
-        <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 12px; padding: 8px 10px; background: rgba(88, 166, 255, 0.08); border-left: 3px solid var(--accent-blue); border-radius: 4px;">
-          <strong>Archaeology Inference:</strong> The chosen model synthesizes raw git history and evidence into a plain-English explanation of why code exists. Subsurface answers "is this safe to change?", but never modifies code directly.
-        </div>
-
-        <div style="margin-bottom: 14px;">
-          <label style="font-size: 11px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase;">Provider Presets</label>
-          <div style="display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap;" id="presetList">
-            <span class="preset-pill active" onclick="selectPreset('OpenAI')">OpenAI</span>
-            <span class="preset-pill" onclick="selectPreset('Grok')">Grok</span>
-            <span class="preset-pill" onclick="selectPreset('OpenRouter')">OpenRouter</span>
-            <span class="preset-pill" onclick="selectPreset('OpenCode Zen')">OpenCode Zen</span>
-            <span class="preset-pill" onclick="selectPreset('Ollama (Local)')">Ollama</span>
-            <span class="preset-pill" onclick="selectPreset('Custom')">Custom</span>
+      <div class="sheet-body">
+        <section class="settings-section" data-settings-section="connections">
+          <h2 class="settings-heading">Connections</h2>
+          <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 12px; padding: 8px 10px; background: rgba(88, 166, 255, 0.08); border-left: 3px solid var(--accent-blue); border-radius: 4px;">
+            <strong>Archaeology Inference:</strong> The chosen model synthesizes raw git history and evidence into a plain-English explanation of why code exists. Subsurface answers "is this safe to change?", but never modifies code directly.
           </div>
-        </div>
 
-        <div style="margin-bottom: 12px;">
-          <label style="font-size: 11px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 4px;">Base URL</label>
-          <input type="text" id="settingBaseUrl" style="width: 100%;" value="https://api.openai.com/v1" />
-        </div>
-
-        <div style="margin-bottom: 12px;">
-          <label style="font-size: 11px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 4px;">
-            API Key (Stored securely in macOS Keychain)
-          </label>
-          <input type="password" id="settingApiKey" placeholder="Paste API Key (stored in macOS Keychain, never in files)" style="width: 100%;" />
-          <div id="keyStatus" style="font-size: 11px; color: var(--accent-green); margin-top: 4px;"></div>
-        </div>
-
-        <div style="margin-bottom: 12px;">
-          <label style="font-size: 11px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 4px;">
-            Model Name (Editable text field with suggestions — ADR 0005)
-          </label>
-          <input type="text" id="settingModel" style="width: 100%; margin-bottom: 4px;" value="gpt-4o" />
-          <div id="modelSuggestions" style="margin-top: 4px;"></div>
-        </div>
-
-        <div style="margin-bottom: 12px; padding: 10px; background: var(--bg-dark); border-radius: 6px;">
-          <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-            <input type="checkbox" id="settingOfflineMode" />
-            <span style="font-weight: 600; font-size: 12px;">Zero-Network / Offline Mode</span>
-          </label>
-          <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">
-            Guarantees no outbound network calls leave your machine. Pure local git archaeology only.
+          <div style="margin-bottom: 14px;">
+            <label style="font-size: 11px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase;">Provider Presets</label>
+            <div style="display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap;" id="presetList">
+              <span class="preset-pill active" onclick="selectPreset('OpenAI')">OpenAI</span>
+              <span class="preset-pill" onclick="selectPreset('Grok')">Grok</span>
+              <span class="preset-pill" onclick="selectPreset('OpenRouter')">OpenRouter</span>
+              <span class="preset-pill" onclick="selectPreset('OpenCode Zen')">OpenCode Zen</span>
+              <span class="preset-pill" onclick="selectPreset('Ollama (Local)')">Ollama</span>
+              <span class="preset-pill" onclick="selectPreset('Custom')">Custom</span>
+            </div>
           </div>
-        </div>
 
-        <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 14px;">
-          <button onclick="testConnection()">Test Connection</button>
-          <span id="testConnectionResult" style="font-size: 11px;"></span>
-        </div>
+          <div style="margin-bottom: 12px;">
+            <label style="font-size: 11px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 4px;">Base URL</label>
+            <input type="text" id="settingBaseUrl" style="width: 100%;" value="https://api.openai.com/v1" />
+          </div>
+
+          <div style="margin-bottom: 12px;">
+            <label style="font-size: 11px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 4px;">
+              API Key (Stored securely in macOS Keychain)
+            </label>
+            <input type="password" id="settingApiKey" placeholder="Paste API Key (stored in macOS Keychain, never in files)" style="width: 100%;" />
+            <div id="keyStatus" style="font-size: 11px; color: var(--accent-green); margin-top: 4px;"></div>
+          </div>
+
+          <div style="margin-bottom: 12px;">
+            <label style="font-size: 11px; font-weight: 600; color: var(--text-secondary); display: block; margin-bottom: 4px;">
+              Model Name (Editable text field with suggestions — ADR 0005)
+            </label>
+            <input type="text" id="settingModel" style="width: 100%; margin-bottom: 4px;" value="gpt-4o" />
+            <div id="modelSuggestions" style="margin-top: 4px;"></div>
+          </div>
+
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 14px;">
+            <button type="button" onclick="testConnection()">Test Connection</button>
+            <span id="testConnectionResult" style="font-size: 11px;"></span>
+          </div>
+        </section>
+
+        <section class="settings-section" data-settings-section="privacy">
+          <h2 class="settings-heading">Privacy</h2>
+          <div style="margin-bottom: 12px; padding: 10px; background: var(--bg-dark); border-radius: 6px;">
+            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+              <input type="checkbox" id="settingOfflineMode" />
+              <span style="font-weight: 600; font-size: 12px;">Zero-Network / Offline Mode</span>
+            </label>
+            <div style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">
+              Guarantees no outbound network calls leave your machine. Pure local git archaeology only.
+            </div>
+          </div>
+          <p class="empty-verb">Payload preview is required before a provider request. Always-allow is per Project and can be revoked here.</p>
+        </section>
+
+        <section class="settings-section" data-settings-section="quality">
+          <h2 class="settings-heading">Quality</h2>
+          <p class="empty-verb">Quality Grade is the lowest measured dimension. Incomplete stays until required measurements exist. Per-Project overrides are disclosed on every receipt.</p>
+        </section>
+
+        <section class="settings-section" data-settings-section="automation">
+          <h2 class="settings-heading">Automation</h2>
+          <p class="empty-verb">Auto-publish is off. Enable it per Project and category, pick a minimum Quality Grade, and keep Incomplete ineligible.</p>
+        </section>
+
+        <section class="settings-section" data-settings-section="appearance">
+          <h2 class="settings-heading">Appearance</h2>
+          <p class="empty-verb">Appearance follows macOS light and dark by default. Pinning a climate does not change identity.</p>
+        </section>
       </div>
-      <div class="modal-footer">
-        <button onclick="closeModal('settingsModal')">Cancel</button>
-        <button class="primary" onclick="saveSettings()">Save Settings</button>
+      <div class="sheet-footer">
+        <button type="button" onclick="closeModal('settingsSheet')">Close</button>
+        <button type="button" class="primary" onclick="saveSettings()">Save</button>
       </div>
     </div>
-  </div>
+  </article>
 
-  <!-- Payload Preview Modal -->
-  <div class="modal" id="payloadModal">
-    <div class="modal-content">
-      <div class="modal-header">
-        <span>Exact Provider Payload Preview (Invariant)</span>
-        <button onclick="closeModal('payloadModal')">✕</button>
+  <!-- Payload preview uses the same sheet overlay -->
+  <article class="sheet-overlay" id="payloadSheet" data-surface="payload" data-overlay="sheet">
+    <div class="sheet" role="dialog" aria-labelledby="payloadSheetTitle">
+      <div class="sheet-header">
+        <span class="sheet-title" id="payloadSheetTitle">Exact provider payload preview</span>
+        <button type="button" onclick="closeModal('payloadSheet')">Close</button>
       </div>
-      <div class="modal-body">
+      <div class="sheet-body">
         <pre id="payloadText" style="font-family: var(--font-code); font-size: 11px; white-space: pre-wrap; color: #c9d1d9;"></pre>
         <label style="display: flex; gap: 8px; align-items: center; margin-top: 12px;">
           <input type="checkbox" id="alwaysAllowProject" />
           Always allow provider payloads for this Project (change later in Settings)
         </label>
       </div>
-      <div class="modal-footer">
-        <button onclick="closeModal('payloadModal')">Close</button>
-        <button class="primary" onclick="confirmPayloadAndExcavate()">Send & Excavate</button>
+      <div class="sheet-footer">
+        <button type="button" onclick="closeModal('payloadSheet')">Close</button>
+        <button type="button" class="primary" onclick="confirmPayloadAndExcavate()">Send & Excavate</button>
       </div>
     </div>
-  </div>
+  </article>
 
   <script>
     let currentSite = null;
@@ -1322,7 +1437,7 @@
         });
         document.getElementById("payloadText").innerText = JSON.stringify(payload.payload, null, 2);
         document.getElementById("alwaysAllowProject").checked = false;
-        document.getElementById("payloadModal").classList.add("active");
+        document.getElementById("payloadSheet").classList.add("active");
       } catch (err) {
         alert("Preview error: " + err);
       }
@@ -1332,7 +1447,7 @@
       const consent = document.getElementById("alwaysAllowProject").checked
         ? "always_allow_project"
         : "allow_once";
-      closeModal("payloadModal");
+      closeModal("payloadSheet");
       runExcavate(consent);
     }
 
@@ -1576,7 +1691,7 @@
     }
 
     function openSettingsModal() {
-      document.getElementById("settingsModal").classList.add("active");
+      document.getElementById("settingsSheet").classList.add("active");
     }
 
     async function saveSettings() {
@@ -1595,7 +1710,7 @@
         activeSettings = { base_url: baseUrl, model, offline_mode: offlineMode, has_key: !!apiKey };
         updateActiveModelBadge(activeSettings);
         alert("Settings saved successfully!");
-        closeModal("settingsModal");
+        closeModal("settingsSheet");
       } catch (err) {
         alert("Failed to save settings: " + err);
       }
