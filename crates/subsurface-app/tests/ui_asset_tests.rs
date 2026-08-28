@@ -473,12 +473,7 @@ fn activity_center_survives_navigation() {
         "Activity cancel uses the durable store, not navigation"
     );
 
-    for kind in [
-        "assessment",
-        "preparation",
-        "verification",
-        "publication",
-    ] {
+    for kind in ["assessment", "preparation", "verification", "publication"] {
         assert!(
             UI_BUNDLE.contains(&format!("\"{kind}\"")),
             "Activity center tracks {kind}"
@@ -520,6 +515,127 @@ fn activity_center_survives_navigation() {
             "{name} must not unmount or hide Activity"
         );
     }
+}
+
+#[test]
+fn project_picker_is_roster_with_project_vocabulary() {
+    assert!(
+        UI_BUNDLE.contains("data-mode=\"picker\""),
+        "launch must open in Project Picker mode before Shell chrome"
+    );
+    let picker_hide = css_block(UI_BUNDLE, "body[data-mode=\"picker\"] .shell-chrome");
+    assert!(
+        picker_hide.contains("display: none"),
+        "Shell chrome must stay hidden while the Project Picker is the launch surface"
+    );
+
+    let picker = extract_surface(UI_BUNDLE, "picker");
+    assert!(
+        picker.contains("project-picker") && picker.contains("active"),
+        "Launch shows the Project Picker before Shell chrome"
+    );
+
+    let picker_pos = UI_BUNDLE
+        .find("data-surface=\"picker\"")
+        .expect("picker surface missing");
+    let shell_pos = UI_BUNDLE
+        .find("id=\"codeView\"")
+        .expect("Shell chrome missing");
+    assert!(
+        picker_pos < shell_pos,
+        "Project Picker must appear before Shell chrome"
+    );
+
+    assert!(
+        !picker.contains("project-grid") && !picker.contains("project-card"),
+        "No card grid as the launch surface"
+    );
+    let roster_css = css_block(UI_BUNDLE, ".project-roster");
+    assert!(
+        roster_css.contains("flex-direction: column"),
+        "Picker must be a dense roster, not a card grid"
+    );
+    assert!(
+        !roster_css.contains("auto-fill"),
+        "No card grid as the launch surface"
+    );
+
+    let fields = attr_values(&picker, "data-picker-field");
+    assert_eq!(
+        fields,
+        [
+            "name",
+            "path",
+            "quality-grade",
+            "last-assessment",
+            "in-flight-activity"
+        ],
+        "each roster row must show name, path, Quality Grade, last Assessment, and in-flight Activity"
+    );
+    for label in ["Quality Grade", "Assessment", "Activity"] {
+        assert!(picker.contains(label), "roster must label {label}");
+    }
+
+    assert!(picker.contains("Project"), "active copy uses Project");
+    assert!(
+        !picker_mentions_site(&picker),
+        "Site must not appear on the Project Picker surface"
+    );
+
+    let empty = extract_marked_element(&picker, "data-picker-state", "empty");
+    let error = extract_marked_element(&picker, "data-picker-state", "error");
+    assert!(
+        empty.contains("empty-verb"),
+        "empty state must use empty-verb"
+    );
+    assert!(
+        error.contains("empty-verb"),
+        "error state must use empty-verb"
+    );
+    assert!(
+        names_next_verb(&empty),
+        "empty state must name the next verb, got {empty}"
+    );
+    assert!(
+        names_next_verb(&error),
+        "error state must name the next verb, got {error}"
+    );
+
+    assert!(
+        picker.contains("data-opens=\"shell\"")
+            || UI_BUNDLE.contains("function openProjectFromRoster"),
+        "choosing a roster row must open the Shell"
+    );
+}
+
+fn picker_mentions_site(markup: &str) -> bool {
+    markup
+        .split(|c: char| !c.is_ascii_alphabetic())
+        .any(|word| word.eq_ignore_ascii_case("site") || word.eq_ignore_ascii_case("sites"))
+}
+
+fn names_next_verb(markup: &str) -> bool {
+    let lower = markup.to_ascii_lowercase();
+    ["open", "enter", "choose", "add", "assess", "try"]
+        .iter()
+        .any(|verb| lower.contains(verb))
+}
+
+fn extract_marked_element(html: &str, attr: &str, value: &str) -> String {
+    let mark = format!("{attr}=\"{value}\"");
+    let start = html.find(&mark).unwrap_or_else(|| panic!("missing {mark}"));
+    let head = html[..start].rfind('<').unwrap_or(start);
+    let tag_rest = &html[head + 1..];
+    let tag_end = tag_rest
+        .find(|c: char| c.is_whitespace() || c == '>')
+        .unwrap_or(tag_rest.len());
+    let tag = &tag_rest[..tag_end];
+    let close = format!("</{tag}>");
+    let after = &html[start..];
+    let end_rel = after
+        .find(&close)
+        .unwrap_or_else(|| panic!("{attr}={value} is not a closed {tag}"));
+    html[head..start + end_rel + close.len()].to_string()
 }
 
 fn extract_strata_surface(html: &str) -> String {
