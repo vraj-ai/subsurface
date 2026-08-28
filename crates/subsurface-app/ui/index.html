@@ -3,26 +3,10 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Subsurface — Git History Archaeology</title>
+  <title>Subsurface</title>
+  <link rel="stylesheet" href="tokens.css" />
   <style>
-    :root {
-      --bg-dark: #0d1117;
-      --bg-panel: #161b22;
-      --bg-panel-header: #1f242c;
-      --bg-card: #21262d;
-      --bg-card-hover: #292e37;
-      --border-color: #30363d;
-      --text-primary: #f0f6fc;
-      --text-secondary: #8b949e;
-      --text-muted: #6e7681;
-      --accent-blue: #58a6ff;
-      --accent-blue-btn: #1f6feb;
-      --accent-green: #2ea043;
-      --accent-amber: #d29922;
-      --accent-red: #f85149;
-      --font-code: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
-      --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    }
+    /* Palette, type, focus, and motion live in tokens.css */
 
     * {
       box-sizing: border-box;
@@ -38,19 +22,20 @@
       display: flex;
       flex-direction: column;
       overflow: hidden;
-      font-size: 13px;
+      font-size: var(--text-size-ui);
     }
 
     header {
       background: var(--bg-panel-header);
       border-bottom: 1px solid var(--border-color);
-      padding: 8px 16px;
+      padding: 8px 16px 10px;
       display: flex;
       align-items: center;
       justify-content: space-between;
       gap: 12px;
       flex-shrink: 0;
-      height: 48px;
+      flex-wrap: wrap;
+      min-height: 48px;
     }
 
     .brand {
@@ -65,7 +50,7 @@
 
     .brand-tag {
       font-size: 10px;
-      background: #30363d;
+      background: var(--border-color);
       color: var(--text-secondary);
       padding: 2px 6px;
       border-radius: 4px;
@@ -98,11 +83,12 @@
     }
 
     .nav-btn.active {
-      background: #1f2b3e;
+      background: var(--bg-selected);
       color: var(--accent-blue);
-      border-color: rgba(56, 139, 253, 0.4);
+      border-color: var(--accent-blue);
       font-weight: 600;
     }
+
 
     .header-center {
       display: flex;
@@ -127,7 +113,7 @@
     }
 
     button {
-      background: #21262d;
+      background: var(--bg-card);
       color: var(--text-primary);
       border: 1px solid var(--border-color);
       padding: 6px 14px;
@@ -135,25 +121,24 @@
       cursor: pointer;
       font-size: 12px;
       font-weight: 500;
-      transition: all 0.15s ease;
       display: inline-flex;
       align-items: center;
       gap: 6px;
     }
 
     button:hover {
-      background: #30363d;
-      border-color: #8b949e;
+      background: var(--border-color);
+      border-color: var(--text-secondary);
     }
 
     button.primary {
       background: var(--accent-blue-btn);
-      border-color: rgba(240, 246, 252, 0.1);
-      color: #fff;
+      border-color: transparent;
+      color: var(--text-on-accent);
     }
 
     button.primary:hover {
-      background: #388bfd;
+      background: var(--accent-blue-btn);
     }
 
     button.small {
@@ -162,8 +147,8 @@
     }
 
     .provider-pill {
-      background: #1f2b3e;
-      border: 1px solid rgba(56, 139, 253, 0.4);
+      background: var(--bg-selected);
+      border: 1px solid var(--accent-blue);
       color: var(--accent-blue);
       padding: 4px 10px;
       border-radius: 12px;
@@ -176,13 +161,13 @@
     }
 
     .provider-pill:hover {
-      background: #27374f;
+      background: var(--bg-card-hover);
     }
 
     /* Views */
     .view-container {
       flex: 1;
-      height: calc(100vh - 48px);
+      min-height: 0;
       overflow: hidden;
       display: none;
     }
@@ -239,16 +224,13 @@
       display: flex;
       flex-direction: column;
       justify-content: space-between;
-      transition: all 0.15s ease;
       cursor: pointer;
       position: relative;
     }
 
     .project-card:hover {
       background: var(--bg-card-hover);
-      border-color: #58a6ff;
-      transform: translateY(-2px);
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+      border-color: var(--accent-blue);
     }
 
     .project-card-header {
@@ -294,7 +276,7 @@
     }
 
     .meta-tag {
-      background: #1c2027;
+      background: var(--bg-card);
       border: 1px solid var(--border-color);
       color: var(--text-secondary);
       padding: 2px 6px;
@@ -306,7 +288,7 @@
     .project-actions {
       display: flex;
       gap: 8px;
-      border-top: 1px solid rgba(48, 54, 61, 0.6);
+      border-top: 1px solid var(--border-color);
       padding-top: 12px;
       margin-top: 4px;
     }
@@ -371,7 +353,7 @@
     }
 
     .file-item.active {
-      background: #1f2b3e;
+      background: var(--bg-selected);
       color: var(--accent-blue);
       font-weight: 600;
     }
@@ -411,11 +393,11 @@
     }
 
     .code-row:hover {
-      background: rgba(255, 255, 255, 0.04);
+      background: var(--bg-hover);
     }
 
     .code-row.selected {
-      background: rgba(56, 139, 253, 0.22);
+      background: var(--bg-selected);
     }
 
     .line-number {
@@ -428,7 +410,7 @@
 
     .line-text {
       white-space: pre;
-      color: #c9d1d9;
+      color: var(--code-text);
       flex: 1;
     }
 
@@ -444,21 +426,21 @@
     }
 
     .badge-stated {
-      background: rgba(46, 160, 67, 0.15);
-      color: #3fb950;
-      border: 1px solid #2ea043;
+      background: var(--status-ok-bg);
+      color: var(--status-ok-fg);
+      border: 1px solid var(--accent-green);
     }
 
     .badge-inferred {
-      background: rgba(210, 153, 34, 0.15);
-      color: #e3b341;
-      border: 1px solid #d29922;
+      background: var(--status-warn-bg);
+      color: var(--status-warn-fg);
+      border: 1px solid var(--accent-amber);
     }
 
     .badge-none {
-      background: rgba(110, 118, 129, 0.15);
-      color: #8b949e;
-      border: 1px solid #6e7681;
+      background: var(--bg-hover);
+      color: var(--text-secondary);
+      border: 1px solid var(--border-color);
     }
 
     .card {
@@ -487,21 +469,21 @@
     }
 
     .alert-card.dead-workaround {
-      background: rgba(248, 81, 73, 0.1);
-      border: 1px solid rgba(248, 81, 73, 0.4);
-      color: #f85149;
+      background: var(--status-fault-bg);
+      border: 1px solid var(--accent-red);
+      color: var(--accent-red);
     }
 
     .alert-card.no-rationale {
-      background: rgba(110, 118, 129, 0.1);
-      border: 1px solid rgba(110, 118, 129, 0.3);
-      color: #8b949e;
+      background: var(--bg-hover);
+      border: 1px solid var(--border-color);
+      color: var(--text-secondary);
     }
 
     .alert-card.untested {
-      background: rgba(210, 153, 34, 0.1);
-      border: 1px solid rgba(210, 153, 34, 0.4);
-      color: #e3b341;
+      background: var(--status-warn-bg);
+      border: 1px solid var(--accent-amber);
+      color: var(--status-warn-fg);
     }
 
     .rationale-text {
@@ -512,7 +494,7 @@
     }
 
     .timeline-item {
-      border-left: 2px solid #30363d;
+      border-left: 2px solid var(--border-color);
       padding-left: 10px;
       margin-left: 4px;
       margin-bottom: 12px;
@@ -541,14 +523,14 @@
       max-height: 140px;
       overflow-y: auto;
       margin-top: 4px;
-      color: #8b949e;
+      color: var(--text-secondary);
     }
 
     .modal {
       display: none;
       position: fixed;
       inset: 0;
-      background: rgba(0, 0, 0, 0.75);
+      background: var(--scrim);
       align-items: center;
       justify-content: center;
       z-index: 100;
@@ -583,7 +565,7 @@
       padding: 16px;
       overflow-y: auto;
       line-height: 1.4;
-      color: #c9d1d9;
+      color: var(--code-text);
     }
 
     .modal-footer {
@@ -606,7 +588,7 @@
     }
 
     .preset-pill.active {
-      background: #1f2b3e;
+      background: var(--bg-selected);
       color: var(--accent-blue);
       border-color: var(--accent-blue);
       font-weight: 600;
@@ -617,7 +599,7 @@
     .chip {
       padding: 2px 8px;
       border-radius: 4px;
-      background: #21262d;
+      background: var(--bg-card);
       border: 1px solid var(--border-color);
       font-size: 11px;
       cursor: pointer;
@@ -665,7 +647,7 @@
 
     .opportunity-row.selected {
       border-color: var(--accent-blue);
-      background: #1f2b3e;
+      background: var(--bg-selected);
     }
 
     .opportunity-row .path {
@@ -723,7 +705,7 @@
       display: none;
       position: fixed;
       inset: 0;
-      background: rgba(0, 0, 0, 0.45);
+      background: var(--scrim);
       align-items: stretch;
       justify-content: flex-end;
       z-index: 100;
@@ -764,7 +746,7 @@
       padding: 16px;
       overflow-y: auto;
       line-height: 1.4;
-      color: #c9d1d9;
+      color: var(--code-text);
       flex: 1;
     }
 
@@ -812,31 +794,43 @@
   <header>
     <div style="display: flex; align-items: center; gap: 16px;">
       <div class="brand" onclick="showHomeView()">
-        <span>⚓ Subsurface</span>
-        <span class="brand-tag">v1.0</span>
+        <span>Subsurface</span>
+        <span class="brand-tag">v1.1</span>
       </div>
       <div class="nav-tabs">
         <button class="nav-btn active" id="btnNavHome" onclick="showHomeView()">
-          <span>🏠 Workspace</span>
+          <span>Projects</span>
         </button>
         <button class="nav-btn" id="btnNavCode" onclick="showCodeView()">
-          <span>🔍 Code Explorer</span>
+          <span>Excavate</span>
         </button>
       </div>
+    </div>
+
+    <div class="quality-rail" aria-label="Quality rail">
+      <span class="quality-rail-grade" data-grade="incomplete">Incomplete</span>
+      <ol class="quality-rail-layers">
+        <li data-dimension="correctness">Correctness</li>
+        <li data-dimension="tests">Test protection</li>
+        <li data-dimension="security">Security</li>
+        <li data-dimension="maintainability">Maintainability</li>
+        <li data-dimension="simplicity">Simplicity</li>
+        <li data-dimension="evidence">Evidence fit</li>
+      </ol>
     </div>
 
     <div class="header-center">
       <span id="activeProjectBreadcrumb" style="font-family: var(--font-code); font-size: 11px; color: var(--text-muted); text-overflow: ellipsis; overflow: hidden; white-space: nowrap;">
-        No active repository
+        No project open
       </span>
     </div>
 
     <div style="display: flex; align-items: center; gap: 10px;">
-      <button class="small" onclick="assessProject()">Assess Project</button>
+      <button class="small" id="assessProjectBtn" onclick="assessProject()">Assess project</button>
       <div id="activeModelPill" class="provider-pill" onclick="openSettingsModal()">
-        <span>⚡ gpt-4o</span>
+        <span>gpt-4o</span>
       </div>
-      <button class="small" onclick="openSettingsModal()">⚙️ Settings</button>
+      <button class="small" onclick="openSettingsModal()">Settings</button>
     </div>
   </header>
 
@@ -844,26 +838,26 @@
   <div class="view-container home-workspace active" id="homeView">
     <div class="home-hero">
       <div>
-        <h1 style="font-size: 20px; font-weight: 700; margin-bottom: 4px;">Repository Workspace</h1>
+        <h1 style="font-size: var(--text-size-display); font-weight: 600; margin-bottom: 4px;">Projects</h1>
         <div style="color: var(--text-secondary); font-size: 13px;">
-          Choose a repository to excavate, inspect change rationale, or run repository-wide archaeological reports.
+          Choose a project to assess, or excavate a selected range.
         </div>
       </div>
       <div style="display: flex; gap: 8px;">
-        <input type="text" id="manualSitePath" placeholder="Enter /path/to/repo..." style="width: 280px;" />
-        <button class="primary" onclick="openManualPath()">Open Path</button>
-        <button onclick="refreshHomeWorkspace()">🔄 Refresh</button>
+        <input type="text" id="manualSitePath" placeholder="Enter /path/to/project..." style="width: 280px;" />
+        <button class="primary" onclick="openManualPath()">Open path</button>
+        <button onclick="refreshHomeWorkspace()">Refresh</button>
       </div>
     </div>
 
     <div style="margin-bottom: 20px;">
-      <input type="text" id="workspaceSearch" placeholder="Search repositories by name or path..." style="width: 100%; max-width: 500px;" oninput="filterWorkspaceCards()" />
+      <input type="text" id="workspaceSearch" placeholder="Search projects by name or path..." style="width: 100%; max-width: 500px;" oninput="filterWorkspaceCards()" />
     </div>
 
     <!-- Section: Pinned Projects -->
     <div class="workspace-section" id="sectionPinned" style="display: none;">
       <div class="workspace-section-title">
-        <span>⭐ Pinned Repositories</span>
+        <span>Pinned repositories</span>
       </div>
       <div class="project-grid" id="gridPinned"></div>
     </div>
@@ -871,7 +865,7 @@
     <!-- Section: Recently Excavated -->
     <div class="workspace-section" id="sectionRecent">
       <div class="workspace-section-title">
-        <span>🕒 Recently Excavated Sites</span>
+        <span>Recently excavated</span>
       </div>
       <div class="project-grid" id="gridRecent">
         <div style="color: var(--text-muted); font-size: 12px;">Loading recent sites...</div>
@@ -881,7 +875,7 @@
     <!-- Section: Discovered Repositories -->
     <div class="workspace-section" id="sectionDiscovered">
       <div class="workspace-section-title">
-        <span>🔍 Discovered Repositories</span>
+        <span>Discovered repositories</span>
         <span id="scanRootsLabel" style="font-size: 11px; color: var(--text-muted); font-weight: normal; font-family: var(--font-code);"></span>
       </div>
       <div class="project-grid" id="gridDiscovered"></div>
@@ -1001,7 +995,7 @@
       <div class="sheet-body">
         <section class="settings-section" data-settings-section="connections">
           <h2 class="settings-heading">Connections</h2>
-          <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 12px; padding: 8px 10px; background: rgba(88, 166, 255, 0.08); border-left: 3px solid var(--accent-blue); border-radius: 4px;">
+          <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 12px; padding: 8px 10px; background: var(--bg-selected); border-left: 3px solid var(--accent-blue); border-radius: 4px;">
             <strong>Archaeology Inference:</strong> The chosen model synthesizes raw git history and evidence into a plain-English explanation of why code exists. Subsurface answers "is this safe to change?", but never modifies code directly.
           </div>
 
@@ -1039,7 +1033,7 @@
           </div>
 
           <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 14px;">
-            <button type="button" onclick="testConnection()">Test Connection</button>
+            <button type="button" onclick="testConnection()">Test connection</button>
             <span id="testConnectionResult" style="font-size: 11px;"></span>
           </div>
         </section>
@@ -1088,7 +1082,7 @@
         <button type="button" onclick="closeModal('payloadSheet')">Close</button>
       </div>
       <div class="sheet-body">
-        <pre id="payloadText" style="font-family: var(--font-code); font-size: 11px; white-space: pre-wrap; color: #c9d1d9;"></pre>
+        <pre id="payloadText" style="font-family: var(--font-code); font-size: 11px; white-space: pre-wrap; color: var(--code-text);"></pre>
         <label style="display: flex; gap: 8px; align-items: center; margin-top: 12px;">
           <input type="checkbox" id="alwaysAllowProject" />
           Always allow provider payloads for this Project (change later in Settings)
@@ -1096,7 +1090,7 @@
       </div>
       <div class="sheet-footer">
         <button type="button" onclick="closeModal('payloadSheet')">Close</button>
-        <button type="button" class="primary" onclick="confirmPayloadAndExcavate()">Send & Excavate</button>
+        <button type="button" class="primary" onclick="confirmPayloadAndExcavate()">Send and excavate</button>
       </div>
     </div>
   </article>
@@ -1231,7 +1225,7 @@
     function renderProjectCardHtml(site) {
       const isPinned = !!site.is_pinned;
       const headShort = site.head_commit ? site.head_commit.substring(0, 7) : 'None';
-      const notesLabel = site.field_notes_count > 0 ? `📝 ${site.field_notes_count} Notes` : '📝 0 Notes';
+      const notesLabel = site.field_notes_count > 0 ? `${site.field_notes_count} notes` : '0 notes';
       const pathEscaped = escapeHtml(site.path);
 
       return `
@@ -1248,12 +1242,12 @@
               <span class="meta-tag">HEAD ${headShort}</span>
               <span class="meta-tag">${site.total_commits_estimate} commits</span>
               <span class="meta-tag">${notesLabel}</span>
-              ${site.is_shallow ? '<span class="meta-tag" style="color: #e3b341;">⚠️ Shallow</span>' : ''}
+              ${site.is_shallow ? '<span class="meta-tag" style="color: var(--status-warn-fg);">⚠️ Shallow</span>' : ''}
             </div>
           </div>
           <div class="project-actions" onclick="event.stopPropagation()">
-            <button class="primary small" onclick="openProjectFromCard('${pathEscaped}')">Open Code</button>
-            <button class="small" onclick="openProjectAndAssess('${pathEscaped}')">Assess Project</button>
+            <button class="primary small" onclick="openProjectFromCard('${pathEscaped}')">Open code</button>
+            <button class="small" onclick="openProjectAndAssess('${pathEscaped}')">Assess project</button>
           </div>
         </div>
       `;
@@ -1292,7 +1286,7 @@
           document.getElementById("activeProjectBreadcrumb").innerText = `Active: ${site.root_path}`;
           document.getElementById("siteMeta").innerHTML = `
             <div><strong>HEAD:</strong> ${site.head_commit ? site.head_commit.substring(0, 7) : 'None'} · ${site.total_commits_estimate} commits</div>
-            <div>${site.is_shallow ? '⚠️ Shallow clone' : 'Full history'} · ${site.has_remote ? 'Remote configured' : 'Local repository'}</div>
+            <div>${site.is_shallow ? 'Shallow clone' : 'Full history'} · ${site.has_remote ? 'Remote configured' : 'Local repository'}</div>
           `;
           renderFileList(site.tracked_files);
           if (site.tracked_files.length > 0) {
@@ -1316,9 +1310,9 @@
     function updateActiveModelBadge(settings) {
       const pill = document.getElementById("activeModelPill");
       if (settings.offline_mode) {
-        pill.innerHTML = `<span>🔒 Offline Mode (Git Only)</span>`;
+        pill.innerHTML = `<span>Offline</span>`;
       } else {
-        pill.innerHTML = `<span>⚡ ${escapeHtml(settings.model || 'gpt-4o')}</span>`;
+        pill.innerHTML = `<span>${escapeHtml(settings.model || 'gpt-4o')}</span>`;
       }
     }
 
@@ -1560,10 +1554,10 @@
       if (f.what_when.related_tests.length > 0 || f.what_when.related_docs.length > 0) {
         evidenceHtml += '<div style="margin-top: 8px; font-size: 11px; color: var(--text-muted);">Co-committed tests and docs are a heuristic, not coverage.</div>';
         f.what_when.related_tests.forEach(function (t) {
-          evidenceHtml += '<div style="font-family: var(--font-code); font-size: 11px; color: #3fb950; margin-bottom: 3px;">[Test] ' + escapeHtml(t) + '</div>';
+          evidenceHtml += '<div style="font-family: var(--font-code); font-size: 11px; color: var(--status-ok-fg); margin-bottom: 3px;">[Test] ' + escapeHtml(t) + '</div>';
         });
         f.what_when.related_docs.forEach(function (d) {
-          evidenceHtml += '<div style="font-family: var(--font-code); font-size: 11px; color: #58a6ff; margin-bottom: 3px;">[Doc] ' + escapeHtml(d) + '</div>';
+          evidenceHtml += '<div style="font-family: var(--font-code); font-size: 11px; color: var(--accent-blue); margin-bottom: 3px;">[Doc] ' + escapeHtml(d) + '</div>';
         });
       }
       if (f.budget_summary && f.budget_summary.excluded && f.budget_summary.excluded.length > 0) {
@@ -1633,8 +1627,10 @@
         return;
       }
       showCodeView();
+      const assessBtn = document.getElementById("assessProjectBtn");
+      if (assessBtn) assessBtn.classList.add("in-flight");
       const roster = document.getElementById("opportunityRoster");
-      roster.innerHTML = '<p class="empty-verb">Assessing Project…</p>';
+      roster.innerHTML = '<p class="empty-verb">Assessing project…</p>';
       try {
         const report = await invokeBackend("assess_project", {
           projectPath: currentSite.root_path,
@@ -1649,7 +1645,9 @@
           setStrataBody("problem", emptyVerb("Assessment finished with no Opportunities. Excavate a selected range to start a Finding."));
         }
       } catch (err) {
-        roster.innerHTML = '<p class="empty-verb">Assessment failed. ' + escapeHtml(String(err)) + ' Open a Project and try again.</p>';
+        roster.innerHTML = '<p class="empty-verb">Assessment failed. ' + escapeHtml(String(err)) + ' Open a project and try again.</p>';
+      } finally {
+        if (assessBtn) assessBtn.classList.remove("in-flight");
       }
     }
 

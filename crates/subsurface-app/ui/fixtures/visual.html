@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Subsurface visual fixtures</title>
+  <link rel="stylesheet" href="../tokens.css" />
+  <style>
+    body {
+      margin: 0;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 28px;
+      overflow: auto;
+      height: auto;
+      min-height: 100vh;
+    }
+    h1 { font-size: var(--text-size-display); font-weight: 600; margin: 0 0 8px; }
+    h2 { font-size: 13px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-secondary); margin: 0 0 10px; }
+    section { background: var(--bg-panel); border: 1px solid var(--border-color); border-radius: 8px; padding: 16px; }
+    .swatches { display: flex; gap: 8px; flex-wrap: wrap; }
+    .swatch { width: 72px; min-height: 56px; border-radius: 4px; border: 1px solid var(--border-color); display: flex; align-items: flex-end; padding: 6px; font-size: 10px; font-family: var(--font-code); }
+    .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+    button, a.ctrl {
+      min-height: var(--hit-area);
+      padding: 6px 14px;
+      background: var(--bg-card);
+      color: var(--text-primary);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-control);
+      font-family: var(--font-ui);
+      font-size: 12px;
+      cursor: pointer;
+      text-decoration: none;
+    }
+    button.primary { background: var(--accent-blue-btn); color: var(--text-on-accent); border-color: transparent; }
+    .chip { padding: 2px 8px; border-radius: 4px; font-size: 11px; font-family: var(--font-code); }
+    .ok { color: var(--status-ok-fg); background: var(--status-ok-bg); }
+    .warn { color: var(--status-warn-fg); background: var(--status-warn-bg); }
+    .fault { color: var(--status-fault-fg); background: var(--status-fault-bg); }
+    .specimen-ui { font-size: var(--text-size-ui); }
+    .specimen-code { font-family: var(--font-code); font-size: var(--text-size-code); }
+    .specimen-display { font-size: var(--text-size-display); font-weight: 600; }
+    .pair { padding: 10px 12px; border-radius: 4px; }
+    .climates { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    @media (max-width: 720px) { .climates { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Subsurface visual fixtures</h1>
+    <p class="specimen-ui" style="color: var(--text-secondary); margin: 0;">
+      Dependency-free specimens for the OKLCH instrument. Follow-macOS is the default; pin with data-theme.
+    </p>
+  </header>
+
+  <div class="quality-rail" aria-label="Quality rail">
+    <span class="quality-rail-grade" data-grade="incomplete">Incomplete</span>
+    <ol class="quality-rail-layers">
+      <li data-dimension="correctness">Correctness</li>
+      <li data-dimension="tests">Test protection</li>
+      <li data-dimension="security">Security</li>
+      <li data-dimension="maintainability">Maintainability</li>
+      <li data-dimension="simplicity">Simplicity</li>
+      <li data-dimension="evidence">Evidence fit</li>
+    </ol>
+  </div>
+
+  <section>
+    <h2>Type</h2>
+    <div class="specimen-display">Field instrument</div>
+    <div class="specimen-ui">Interface copy stays sentence case. No emoji in chrome.</div>
+    <div class="specimen-code">Evidence, paths, and receipts stay mono: abcdef 012345 HEAD</div>
+  </section>
+
+  <section>
+    <h2>Focus and controls</h2>
+    <div class="row">
+      <button type="button">Secondary</button>
+      <button type="button" class="primary">Primary action</button>
+      <button type="button" class="in-flight">In-flight work</button>
+      <a class="ctrl" href="#type">Focusable link</a>
+    </div>
+  </section>
+
+  <section>
+    <h2>Status</h2>
+    <div class="row">
+      <span class="chip ok">Verified</span>
+      <span class="chip warn">Incomplete</span>
+      <span class="chip fault">Failed</span>
+    </div>
+  </section>
+
+  <div class="climates">
+    <section data-theme="light">
+      <h2>Light</h2>
+      <div class="pair" style="background: var(--light-bg-dark); color: var(--light-text-primary);">Primary on canvas</div>
+      <div class="pair" style="background: var(--light-bg-panel); color: var(--light-text-secondary);">Secondary on panel</div>
+      <div class="pair" style="background: var(--light-accent-blue-btn); color: var(--light-text-on-accent);">Text on accent</div>
+      <div class="swatches" style="margin-top: 10px;">
+        <div class="swatch" style="background: var(--light-bg-dark); color: var(--light-text-muted);">canvas</div>
+        <div class="swatch" style="background: var(--light-accent-blue); color: var(--light-text-on-accent);">verd</div>
+        <div class="swatch" style="background: var(--light-accent-amber); color: var(--light-text-on-accent);">amber</div>
+        <div class="swatch" style="background: var(--light-accent-red); color: var(--light-text-on-accent);">fault</div>
+      </div>
+    </section>
+    <section data-theme="dark">
+      <h2>Dark</h2>
+      <div class="pair" style="background: var(--dark-bg-dark); color: var(--dark-text-primary);">Primary on canvas</div>
+      <div class="pair" style="background: var(--dark-bg-panel); color: var(--dark-text-secondary);">Secondary on panel</div>
+      <div class="pair" style="background: var(--dark-accent-blue-btn); color: var(--dark-text-on-accent);">Text on accent</div>
+      <div class="swatches" style="margin-top: 10px;">
+        <div class="swatch" style="background: var(--dark-bg-dark); color: var(--dark-text-muted);">canvas</div>
+        <div class="swatch" style="background: var(--dark-accent-blue); color: var(--dark-text-on-accent);">verd</div>
+        <div class="swatch" style="background: var(--dark-accent-amber); color: var(--dark-text-on-accent);">amber</div>
+        <div class="swatch" style="background: var(--dark-accent-red); color: var(--dark-text-on-accent);">fault</div>
+      </div>
+    </section>
+  </div>
+</body>
+</html>

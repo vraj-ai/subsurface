@@ -1,6 +1,9 @@
+use std::collections::HashMap;
 use std::path::Path;
 
 const UI_BUNDLE: &str = include_str!("../ui/index.html");
+const TOKENS_CSS: &str = include_str!("../ui/tokens.css");
+const VISUAL_FIXTURE: &str = include_str!("../ui/fixtures/visual.html");
 
 const SPEC_ORDER: [&str; 8] = [
     "problem",
@@ -39,6 +42,22 @@ const SETTINGS_LABELS: [&str; 5] = [
     "Automation",
     "Appearance",
 ];
+
+const TEXT_PAIRS: &[(&str, &str)] = &[
+    ("text-primary", "bg-dark"),
+    ("text-primary", "bg-panel"),
+    ("text-primary", "bg-card"),
+    ("text-secondary", "bg-dark"),
+    ("text-secondary", "bg-panel"),
+    ("text-muted", "bg-dark"),
+    ("text-muted", "bg-panel"),
+    ("text-on-accent", "accent-blue-btn"),
+    ("status-ok-fg", "status-ok-bg"),
+    ("status-warn-fg", "status-warn-bg"),
+    ("status-fault-fg", "status-fault-bg"),
+];
+
+const UI_PAIRS: &[(&str, &str)] = &[("focus-ring", "bg-dark")];
 
 #[test]
 fn ui_asset_tests_harness_reads_ui_bundle() {
@@ -175,6 +194,200 @@ fn settings_is_sheet_with_five_sections() {
         !UI_BUNDLE.contains("id=\"settingsView\""),
         "Settings must not ship as a full-screen view"
     );
+}
+
+#[test]
+fn tokens_css_defines_oklch_light_and_dark_and_passes_contrast_check() {
+    let tokens_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("ui/tokens.css");
+    assert!(
+        tokens_path.is_file(),
+        "tokens.css is missing at {}",
+        tokens_path.display()
+    );
+
+    assert!(
+        UI_BUNDLE.contains("href=\"tokens.css\""),
+        "the real UI bundle must load tokens.css"
+    );
+
+    assert!(
+        TOKENS_CSS.contains("oklch("),
+        "tokens.css must express color in OKLCH"
+    );
+    assert!(
+        TOKENS_CSS.contains("[data-theme=\"light\"]"),
+        "tokens.css must define a light climate"
+    );
+    assert!(
+        TOKENS_CSS.contains("[data-theme=\"dark\"]"),
+        "tokens.css must define a dark climate"
+    );
+    assert!(
+        TOKENS_CSS.contains("prefers-color-scheme: dark"),
+        "appearance must follow macOS by default"
+    );
+    assert!(
+        TOKENS_CSS.contains("prefers-reduced-motion"),
+        "reduced motion must be a complete experience"
+    );
+    assert!(
+        TOKENS_CSS.contains(":focus-visible"),
+        "visible focus is required"
+    );
+    assert!(
+        TOKENS_CSS.contains("@font-face")
+            && TOKENS_CSS.contains("url(\"fonts/")
+            && !TOKENS_CSS.contains("http://")
+            && !TOKENS_CSS.contains("https://"),
+        "type must be bundled locally with no webfont CDN"
+    );
+    assert!(
+        TOKENS_CSS.contains(".quality-rail") && TOKENS_CSS.contains(".in-flight"),
+        "quality rail and in-flight motion must be tokenized"
+    );
+
+    let fonts = Path::new(env!("CARGO_MANIFEST_DIR")).join("ui/fonts");
+    for name in [
+        "instrument-sans-400.woff2",
+        "instrument-sans-600.woff2",
+        "martian-mono-400.woff2",
+    ] {
+        let path = fonts.join(name);
+        assert!(path.is_file(), "bundled font missing: {}", path.display());
+    }
+
+    assert!(
+        VISUAL_FIXTURE.contains("href=\"../tokens.css\""),
+        "visual fixtures must load the same tokens.css"
+    );
+    assert!(
+        VISUAL_FIXTURE.contains("quality-rail") && VISUAL_FIXTURE.contains("in-flight"),
+        "visual fixtures must show the quality rail and in-flight stillness contrast"
+    );
+    assert!(
+        !VISUAL_FIXTURE.to_ascii_lowercase().contains("<script"),
+        "visual fixtures must stay dependency-free (no JS)"
+    );
+
+    let light = parse_oklch_vars(TOKENS_CSS, "light");
+    let dark = parse_oklch_vars(TOKENS_CSS, "dark");
+    assert!(
+        light.len() >= 16,
+        "light climate is missing OKLCH tokens, found {}",
+        light.len()
+    );
+    assert!(
+        dark.len() >= 16,
+        "dark climate is missing OKLCH tokens, found {}",
+        dark.len()
+    );
+
+    for climate in [("light", &light), ("dark", &dark)] {
+        for (fg_name, bg_name) in TEXT_PAIRS {
+            let ratio = contrast_pair(climate.1, fg_name, bg_name, climate.0);
+            assert!(
+                ratio >= 4.5,
+                "{} {} on {} contrast {:.2} is below WCAG AA 4.5:1",
+                climate.0,
+                fg_name,
+                bg_name,
+                ratio
+            );
+        }
+        for (fg_name, bg_name) in UI_PAIRS {
+            let ratio = contrast_pair(climate.1, fg_name, bg_name, climate.0);
+            assert!(
+                ratio >= 3.0,
+                "{} {} on {} contrast {:.2} is below WCAG UI 3:1",
+                climate.0,
+                fg_name,
+                bg_name,
+                ratio
+            );
+        }
+    }
+}
+
+fn parse_oklch_vars(css: &str, climate: &str) -> HashMap<String, (f64, f64, f64)> {
+    let prefix = format!("--{climate}-");
+    let mut vars = HashMap::new();
+    for raw_line in css.lines() {
+        let line = raw_line.trim();
+        let Some(rest) = line.strip_prefix(&prefix) else {
+            continue;
+        };
+        let Some((name, value)) = rest.split_once(':') else {
+            continue;
+        };
+        if let Some(oklch) = parse_oklch(value) {
+            vars.insert(name.trim().to_string(), oklch);
+        }
+    }
+    vars
+}
+
+fn parse_oklch(value: &str) -> Option<(f64, f64, f64)> {
+    let start = value.find("oklch(")?;
+    let inner = value[start + 6..].split(')').next()?;
+    let inner = inner.split('/').next().unwrap_or(inner);
+    let parts: Vec<&str> = inner.split_whitespace().collect();
+    if parts.len() < 3 {
+        return None;
+    }
+    let l = parse_lightness(parts[0])?;
+    let c = parts[1].parse().ok()?;
+    let h = parts[2].parse().ok()?;
+    Some((l, c, h))
+}
+
+fn parse_lightness(raw: &str) -> Option<f64> {
+    if let Some(pct) = raw.strip_suffix('%') {
+        return pct.parse::<f64>().ok().map(|v| v / 100.0);
+    }
+    raw.parse().ok()
+}
+
+fn contrast_pair(
+    vars: &HashMap<String, (f64, f64, f64)>,
+    fg_name: &str,
+    bg_name: &str,
+    climate: &str,
+) -> f64 {
+    let fg = vars
+        .get(fg_name)
+        .unwrap_or_else(|| panic!("missing --{climate}-{fg_name} oklch token"));
+    let bg = vars
+        .get(bg_name)
+        .unwrap_or_else(|| panic!("missing --{climate}-{bg_name} oklch token"));
+    contrast_ratio(*fg, *bg)
+}
+
+fn contrast_ratio(fg: (f64, f64, f64), bg: (f64, f64, f64)) -> f64 {
+    let l1 = relative_luminance(fg);
+    let l2 = relative_luminance(bg);
+    let (lighter, darker) = if l1 > l2 { (l1, l2) } else { (l2, l1) };
+    (lighter + 0.05) / (darker + 0.05)
+}
+
+fn relative_luminance((l, c, h): (f64, f64, f64)) -> f64 {
+    let (r, g, b) = oklch_to_linear_srgb(l, c, h);
+    0.2126 * r.clamp(0.0, 1.0) + 0.7152 * g.clamp(0.0, 1.0) + 0.0722 * b.clamp(0.0, 1.0)
+}
+
+fn oklch_to_linear_srgb(l: f64, c: f64, h_deg: f64) -> (f64, f64, f64) {
+    let h = h_deg.to_radians();
+    let a = c * h.cos();
+    let b = c * h.sin();
+    let l_ = l + 0.396_337_777_4 * a + 0.215_803_757_3 * b;
+    let m_ = l - 0.105_561_345_8 * a - 0.063_854_172_8 * b;
+    let s_ = l - 0.089_484_177_5 * a - 1.291_485_548_0 * b;
+    let l3 = l_.powi(3);
+    let m3 = m_.powi(3);
+    let s3 = s_.powi(3);
+    let r = 4.076_741_662_1 * l3 - 3.307_711_591_3 * m3 + 0.230_969_929_2 * s3;
+    let g = -1.268_438_004_6 * l3 + 2.609_757_401_1 * m3 - 0.341_319_396_5 * s3;
+    let b = -0.004_196_086_3 * l3 - 0.703_418_614_7 * m3 + 1.707_614_701_0 * s3;
+    (r, g, b)
 }
 
 fn extract_strata_surface(html: &str) -> String {
