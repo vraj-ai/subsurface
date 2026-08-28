@@ -655,6 +655,40 @@
       margin-top: 2px;
     }
 
+    .left-filter {
+      display: flex;
+      gap: 4px;
+      padding: 8px 12px 0;
+    }
+
+    .left-filter button {
+      flex: 1;
+      background: transparent;
+      border: 1px solid var(--border-color);
+      color: var(--text-secondary);
+      border-radius: 6px;
+      padding: 5px 8px;
+      font-size: 11px;
+    }
+
+    .left-filter button[aria-pressed="true"] {
+      border-color: var(--accent-blue);
+      color: var(--text-primary);
+      background: var(--bg-selected);
+    }
+
+    [data-left-list=field-notes] {
+      display: none;
+    }
+
+    [data-surface=opportunities][data-left-filter=field-notes] [data-left-list=opportunities] {
+      display: none;
+    }
+
+    [data-surface=opportunities][data-left-filter=field-notes] [data-left-list=field-notes] {
+      display: flex;
+    }
+
     .strata {
       display: flex;
       flex-direction: column;
@@ -1043,13 +1077,20 @@
   <!-- One Shell after a Project is chosen -->
   <div class="view-container" id="codeView">
     <div class="shell-layout">
-      <aside class="panel" data-surface="opportunities" data-shell-region="left">
+      <aside class="panel" data-surface="opportunities" data-shell-region="left" data-left-filter="opportunities">
         <div class="panel-header">
-          <span>Opportunities</span>
+          <span id="leftColumnTitle">Opportunities</span>
           <span id="opportunityStateBadge" class="badge badge-none">No selection</span>
         </div>
-        <div id="opportunityRoster" class="opportunity-roster">
+        <div class="left-filter" data-left-filter-bar>
+          <button type="button" data-left-filter="opportunities" aria-pressed="true" onclick="setLeftFilter('opportunities')">Opportunities</button>
+          <button type="button" data-left-filter="field-notes" aria-pressed="false" onclick="setLeftFilter('field-notes')">Field Notes</button>
+        </div>
+        <div id="opportunityRoster" class="opportunity-roster" data-left-list="opportunities">
           <p class="empty-verb">Assess this Project to list Opportunities, or excavate a selected range.</p>
+        </div>
+        <div id="fieldNoteRoster" class="opportunity-roster" data-left-list="field-notes">
+          <p class="empty-verb">Save a Finding as a Field Note to list it here.</p>
         </div>
       </aside>
 
@@ -1283,6 +1324,8 @@
     let activeSettings = null;
     let currentReport = null;
     let currentOpportunityIndex = null;
+    let currentFieldNotes = [];
+    let currentFieldNoteId = null;
     let homeWorkspaceData = null;
 
     const ACTIVITY_KINDS = ["assessment", "preparation", "verification", "publication"];
@@ -1474,6 +1517,7 @@
           renderProjectAssessment(null);
           await refreshProjectPicker();
           await refreshActivityCenter();
+          await refreshFieldNotes();
         }
       } catch (err) {
         currentSite = null;
@@ -2056,6 +2100,92 @@
       }
     }
 
+    function setLeftFilter(name) {
+      const column = document.querySelector('[data-surface="opportunities"]');
+      if (!column) return;
+      column.setAttribute("data-left-filter", name);
+      const title = document.getElementById("leftColumnTitle");
+      if (title) title.textContent = name === "field-notes" ? "Field Notes" : "Opportunities";
+      column.querySelectorAll("[data-left-filter-bar] [data-left-filter]").forEach(function (btn) {
+        btn.setAttribute("aria-pressed", btn.getAttribute("data-left-filter") === name ? "true" : "false");
+      });
+      if (name === "field-notes") {
+        refreshFieldNotes();
+      }
+    }
+
+    async function refreshFieldNotes() {
+      if (!currentSite) {
+        currentFieldNotes = [];
+        renderFieldNoteRoster();
+        return;
+      }
+      try {
+        currentFieldNotes = await invokeBackend("list_field_notes", {
+          sitePath: currentSite.root_path
+        }) || [];
+      } catch (err) {
+        console.error("Field Notes refresh failed:", err);
+        currentFieldNotes = [];
+      }
+      renderFieldNoteRoster();
+    }
+
+    function renderFieldNoteRoster() {
+      const roster = document.getElementById("fieldNoteRoster");
+      if (!roster) return;
+      if (!currentFieldNotes || currentFieldNotes.length === 0) {
+        roster.innerHTML = '<p class="empty-verb">Save a Finding as a Field Note to list it here.</p>';
+        return;
+      }
+      roster.innerHTML = currentFieldNotes.map(function (note) {
+        const selected = note.id === currentFieldNoteId ? " selected" : "";
+        const range = note.line_range || { start: "?", end: "?" };
+        const path = note.file_path || "";
+        const meta = note.user_notes ? note.user_notes : "Field Note";
+        return '<button type="button" class="opportunity-row' + selected + '" data-note-id="' + escapeHtml(note.id) + '" onclick="selectFieldNote(this.dataset.noteId)">'
+          + '<div class="path">' + escapeHtml(path) + ':' + range.start + '–' + range.end + '</div>'
+          + '<div class="meta">' + escapeHtml(meta) + '</div>'
+          + '</button>';
+      }).join("");
+    }
+
+    async function selectFieldNote(id) {
+      const note = (currentFieldNotes || []).find(function (n) { return n.id === id; });
+      if (!note) return;
+      currentFieldNoteId = id;
+      currentOpportunityIndex = null;
+      currentFinding = note.finding || null;
+      showCodeView();
+      setLeftFilter("field-notes");
+      if (note.file_path) {
+        await loadFile(note.file_path);
+        if (note.line_range) {
+          selectedStartLine = note.line_range.start;
+          selectedEndLine = note.line_range.end;
+          updateSelectionUI();
+          document.querySelectorAll(".code-row").forEach(function (row) {
+            const num = parseInt(row.dataset.line);
+            row.classList.toggle("selected", num >= note.line_range.start && num <= note.line_range.end);
+          });
+        }
+      }
+      if (note.finding) {
+        renderFinding(note.finding);
+      } else {
+        setStrataBody("finding", emptyVerb(EMPTY_STRATA.finding));
+        setStrataBody("evidence", emptyVerb(EMPTY_STRATA.evidence));
+        resetLaterStrata();
+      }
+      const rangeLabel = note.line_range ? (note.line_range.start + "–" + note.line_range.end) : "";
+      const problem = '<div style="font-weight: 600; margin-bottom: 4px;">Field Note</div>'
+        + (note.user_notes ? '<div style="margin-bottom: 6px;">' + escapeHtml(note.user_notes) + '</div>' : "")
+        + '<div style="font-family: var(--font-code); font-size: 11px; color: var(--text-secondary);">'
+        + escapeHtml(note.file_path || "") + (rangeLabel ? ":" + rangeLabel : "") + "</div>";
+      setStrataBody("problem", problem);
+      renderFieldNoteRoster();
+    }
+
     async function saveNote() {
       if (!currentFinding || !currentSite) return;
       const note = document.getElementById("userNoteInput").value;
@@ -2067,6 +2197,7 @@
         });
         alert("Field Note saved!");
         await refreshProjectPicker();
+        await refreshFieldNotes();
       } catch (err) {
         alert("Failed to save note: " + err);
       }
