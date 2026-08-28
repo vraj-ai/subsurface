@@ -2,11 +2,15 @@ mod support;
 
 use std::time::Duration;
 
+use subsurface_engine::automation::{
+    AutoPublishBlock, AutoPublishCandidate, AutoPublishDecision, AutoPublishError,
+    AutoPublishEvent, AutoPublisher, QualityGrade,
+};
 use subsurface_engine::fixture::GitFixture;
 use subsurface_engine::github::{
-    fetch_work_item_state, fingerprint_marker, infer_github_destination, publish_work_item_preview,
-    GitHubAuth, GitHubAuthMethod, GitHubClient, PublishOutcome, WorkItemDraft,
-    WorkItemTrackerState,
+    fetch_work_item_state, fingerprint_marker, infer_github_destination, preview_work_item,
+    publish_work_item_preview, GitHubAuth, GitHubAuthMethod, GitHubClient, GitHubDestination,
+    PublishOutcome, WorkItemDraft, WorkItemTrackerState,
 };
 use subsurface_engine::opportunity::{Opportunity, OpportunityStatus, Reassessment};
 use subsurface_engine::project::Project;
@@ -186,4 +190,381 @@ fn closed_work_item_does_not_resolve_without_reassessment() {
     let requests = server.requests();
     assert_eq!(requests.len(), 3);
     assert!(requests[2].starts_with("GET /repos/acme/widgets/issues/81 "));
+}
+
+fn eligible_publisher() -> AutoPublisher {
+    let mut publisher = AutoPublisher::default();
+    publisher.enable();
+    publisher
+        .settings_mut()
+        .enable_category("missing-rationale");
+    publisher
+        .settings_mut()
+        .record_proven_example("missing-rationale");
+    publisher
+}
+
+fn candidate<'a>(
+    opportunity: &'a Opportunity,
+    destination: &'a GitHubDestination,
+    grade: QualityGrade,
+    model_only: bool,
+) -> AutoPublishCandidate<'a> {
+    AutoPublishCandidate {
+        opportunity,
+        destination,
+        grade,
+        model_only,
+    }
+}
+
+fn assert_no_live_github(server: &LocalHttpFake) {
+    let requests = server.requests();
+    assert!(
+        !requests
+            .iter()
+            .any(|request| request.contains("api.github.com")),
+        "tests must not write to live GitHub"
+    );
+    assert!(server.address().ip().is_loopback());
+}
+
+fn create_server_for(
+    destination: &GitHubDestination,
+    draft: &WorkItemDraft,
+    number: u64,
+) -> LocalHttpFake {
+    let preview = preview_work_item(destination, draft);
+    LocalHttpFake::start_with(vec![
+        empty_search(),
+        created_issue(number, &preview.title, &preview.body),
+    ])
+}
+
+#[test]
+fn auto_publish_is_off_by_default() {
+    let (_fixture, project) = github_project();
+    let destination = infer_github_destination(&project).expect("infer destination");
+    let mut opportunity =
+        Opportunity::verified(approved_draft("missing-rationale:src/auth.rs:1-20@abc123"));
+    let publisher = AutoPublisher::default();
+
+    assert!(!publisher.settings().is_enabled());
+    assert_eq!(publisher.settings().min_grade(), QualityGrade::APlus);
+
+    let mut publisher = publisher;
+    let decision = publisher.consider(&candidate(
+        &opportunity,
+        &destination,
+        QualityGrade::APlus,
+        false,
+    ));
+    assert_eq!(
+        decision,
+        AutoPublishDecision::Blocked(AutoPublishBlock::Disabled)
+    );
+    assert!(publisher.pending().is_none());
+
+    let server = LocalHttpFake::start_with(vec![StubResponse::json(
+        500,
+        r#"{"error":"auto-publish off must not write"}"#,
+    )]);
+    let client = GitHubClient::new()
+        .with_base_url(format!("http://{}", server.address()))
+        .with_timeout(Duration::from_secs(2));
+    let error = publisher
+        .publish_due(&client, &publish_auth(), &mut opportunity)
+        .expect_err("off-by-default must not publish");
+    assert!(matches!(error, AutoPublishError::NoPendingCountdown));
+    assert!(server.requests().is_empty());
+    assert_no_live_github(&server);
+    assert_eq!(opportunity.status, OpportunityStatus::Verified);
+}
+
+#[test]
+fn auto_publish_requires_category_enable_and_proven_example() {
+    let (_fixture, project) = github_project();
+    let destination = infer_github_destination(&project).expect("infer destination");
+    let opportunity =
+        Opportunity::verified(approved_draft("missing-rationale:src/auth.rs:1-20@abc123"));
+    let mut publisher = AutoPublisher::default();
+    publisher.enable();
+
+    let decision = publisher.consider(&candidate(
+        &opportunity,
+        &destination,
+        QualityGrade::APlus,
+        false,
+    ));
+    assert_eq!(
+        decision,
+        AutoPublishDecision::Blocked(AutoPublishBlock::CategoryNotEnabled {
+            category: "missing-rationale".into(),
+        })
+    );
+
+    publisher
+        .settings_mut()
+        .enable_category("missing-rationale");
+    let decision = publisher.consider(&candidate(
+        &opportunity,
+        &destination,
+        QualityGrade::APlus,
+        false,
+    ));
+    assert_eq!(
+        decision,
+        AutoPublishDecision::Blocked(AutoPublishBlock::NoProvenExample {
+            category: "missing-rationale".into(),
+        })
+    );
+    assert!(publisher.pending().is_none());
+}
+
+#[test]
+fn auto_publish_excludes_incomplete_and_model_only() {
+    let (_fixture, project) = github_project();
+    let destination = infer_github_destination(&project).expect("infer destination");
+    let opportunity =
+        Opportunity::verified(approved_draft("missing-rationale:src/auth.rs:1-20@abc123"));
+    let mut publisher = eligible_publisher();
+    publisher.settings_mut().set_min_grade(QualityGrade::F);
+
+    let incomplete = publisher.consider(&candidate(
+        &opportunity,
+        &destination,
+        QualityGrade::Incomplete,
+        false,
+    ));
+    assert_eq!(
+        incomplete,
+        AutoPublishDecision::Blocked(AutoPublishBlock::Incomplete)
+    );
+
+    let model_only = publisher.consider(&candidate(
+        &opportunity,
+        &destination,
+        QualityGrade::APlus,
+        true,
+    ));
+    assert_eq!(
+        model_only,
+        AutoPublishDecision::Blocked(AutoPublishBlock::ModelOnly)
+    );
+    assert!(publisher.pending().is_none());
+    assert!(
+        !QualityGrade::Incomplete.meets_minimum(QualityGrade::F),
+        "Incomplete must never meet a letter-grade floor"
+    );
+}
+
+#[test]
+fn auto_publish_minimum_grade_includes_equal_and_stronger() {
+    assert!(QualityGrade::C.meets_minimum(QualityGrade::C));
+    assert!(QualityGrade::B.meets_minimum(QualityGrade::C));
+    assert!(QualityGrade::A.meets_minimum(QualityGrade::C));
+    assert!(QualityGrade::APlus.meets_minimum(QualityGrade::C));
+    assert!(!QualityGrade::D.meets_minimum(QualityGrade::C));
+    assert!(!QualityGrade::A.meets_minimum(QualityGrade::APlus));
+    assert!(QualityGrade::APlus.meets_minimum(QualityGrade::APlus));
+
+    let (_fixture, project) = github_project();
+    let destination = infer_github_destination(&project).expect("infer destination");
+    let opportunity =
+        Opportunity::verified(approved_draft("missing-rationale:src/auth.rs:1-20@abc123"));
+    let mut publisher = eligible_publisher();
+    publisher.settings_mut().set_min_grade(QualityGrade::C);
+
+    match publisher.consider(&candidate(
+        &opportunity,
+        &destination,
+        QualityGrade::C,
+        false,
+    )) {
+        AutoPublishDecision::Countdown(countdown) => {
+            assert_eq!(countdown.grade, QualityGrade::C);
+            assert_eq!(countdown.destination.owner, "acme");
+            assert_eq!(countdown.destination.repo, "widgets");
+        }
+        other => panic!("C should meet minimum C, got {other:?}"),
+    }
+    publisher.cancel();
+
+    publisher.settings_mut().set_min_grade(QualityGrade::APlus);
+    let blocked = publisher.consider(&candidate(
+        &opportunity,
+        &destination,
+        QualityGrade::A,
+        false,
+    ));
+    assert_eq!(
+        blocked,
+        AutoPublishDecision::Blocked(AutoPublishBlock::GradeBelowMinimum {
+            grade: QualityGrade::A,
+            minimum: QualityGrade::APlus,
+        })
+    );
+}
+
+#[test]
+fn auto_publish_countdown_can_be_cancelled() {
+    let (_fixture, project) = github_project();
+    let destination = infer_github_destination(&project).expect("infer destination");
+    let mut opportunity =
+        Opportunity::verified(approved_draft("missing-rationale:src/auth.rs:1-20@abc123"));
+    let mut publisher = eligible_publisher();
+    let decision = publisher.consider(&candidate(
+        &opportunity,
+        &destination,
+        QualityGrade::APlus,
+        false,
+    ));
+    match decision {
+        AutoPublishDecision::Countdown(countdown) => {
+            assert_eq!(countdown.grade, QualityGrade::APlus);
+            assert_eq!(countdown.destination.owner, "acme");
+            assert_eq!(countdown.opportunity_id, opportunity.id);
+        }
+        other => panic!("expected countdown, got {other:?}"),
+    }
+
+    let cancelled = publisher.cancel().expect("countdown to cancel");
+    assert_eq!(cancelled.opportunity_id, opportunity.id);
+    assert!(publisher.pending().is_none());
+    assert!(publisher
+        .log()
+        .iter()
+        .any(|event| matches!(event, AutoPublishEvent::Cancelled { .. })));
+
+    let server = LocalHttpFake::start_with(vec![StubResponse::json(
+        500,
+        r#"{"error":"cancelled countdown must not write"}"#,
+    )]);
+    let client = GitHubClient::new()
+        .with_base_url(format!("http://{}", server.address()))
+        .with_timeout(Duration::from_secs(2));
+    let error = publisher
+        .publish_due(&client, &publish_auth(), &mut opportunity)
+        .expect_err("cancelled countdown must not publish");
+    assert!(matches!(error, AutoPublishError::NoPendingCountdown));
+    assert!(server.requests().is_empty());
+    assert_no_live_github(&server);
+    assert_eq!(opportunity.status, OpportunityStatus::Verified);
+}
+
+#[test]
+fn auto_publish_happy_path_respects_daily_limit_and_log() {
+    let (_fixture, project) = github_project();
+    let destination = infer_github_destination(&project).expect("infer destination");
+    let mut first =
+        Opportunity::verified(approved_draft("missing-rationale:src/auth.rs:1-20@abc123"));
+    let mut publisher = eligible_publisher();
+    publisher.settings_mut().set_daily_limit(1);
+
+    match publisher.consider(&candidate(&first, &destination, QualityGrade::APlus, false)) {
+        AutoPublishDecision::Countdown(countdown) => {
+            assert_eq!(countdown.destination.owner, "acme");
+            assert_eq!(countdown.grade, QualityGrade::APlus);
+        }
+        other => panic!("expected countdown, got {other:?}"),
+    }
+
+    let server = create_server_for(&destination, &first.draft, 91);
+    let client = GitHubClient::new()
+        .with_base_url(format!("http://{}", server.address()))
+        .with_timeout(Duration::from_secs(2));
+    let published = publisher
+        .publish_due(&client, &publish_auth(), &mut first)
+        .expect("eligible auto-publish");
+    assert_eq!(published.number, 91);
+    assert_eq!(published.outcome, PublishOutcome::Created);
+    assert_eq!(first.status, OpportunityStatus::Published);
+    assert_eq!(publisher.published_today(), 1);
+    assert!(publisher
+        .log()
+        .iter()
+        .any(|event| matches!(event, AutoPublishEvent::Published { number: 91, .. })));
+
+    let requests = server.requests();
+    assert_eq!(requests.len(), 2);
+    assert!(requests[0].starts_with("GET /search/issues?"));
+    assert!(requests[1].starts_with("POST /repos/acme/widgets/issues "));
+    assert_no_live_github(&server);
+
+    let second =
+        Opportunity::verified(approved_draft("missing-rationale:src/auth.rs:21-40@def456"));
+    let blocked = publisher.consider(&candidate(
+        &second,
+        &destination,
+        QualityGrade::APlus,
+        false,
+    ));
+    assert_eq!(
+        blocked,
+        AutoPublishDecision::Blocked(AutoPublishBlock::DailyLimitReached { limit: 1 })
+    );
+
+    publisher.start_new_day();
+    match publisher.consider(&candidate(
+        &second,
+        &destination,
+        QualityGrade::APlus,
+        false,
+    )) {
+        AutoPublishDecision::Countdown(_) => {}
+        other => panic!("new day should reset the daily limit, got {other:?}"),
+    }
+    publisher.cancel();
+}
+
+#[test]
+fn disabling_auto_publish_stops_future_writes_and_keeps_the_log() {
+    let (_fixture, project) = github_project();
+    let destination = infer_github_destination(&project).expect("infer destination");
+    let mut opportunity =
+        Opportunity::verified(approved_draft("missing-rationale:src/auth.rs:1-20@abc123"));
+    let mut publisher = eligible_publisher();
+    publisher.consider(&candidate(
+        &opportunity,
+        &destination,
+        QualityGrade::APlus,
+        false,
+    ));
+    assert!(publisher.pending().is_some());
+
+    let prior_events = publisher.log().len();
+    publisher.disable();
+    assert!(!publisher.settings().is_enabled());
+    assert!(publisher.pending().is_none());
+    assert!(publisher
+        .log()
+        .iter()
+        .any(|event| matches!(event, AutoPublishEvent::Disabled)));
+    assert!(publisher.log().len() >= prior_events);
+
+    let blocked = publisher.consider(&candidate(
+        &opportunity,
+        &destination,
+        QualityGrade::APlus,
+        false,
+    ));
+    assert_eq!(
+        blocked,
+        AutoPublishDecision::Blocked(AutoPublishBlock::Disabled)
+    );
+
+    let server = LocalHttpFake::start_with(vec![StubResponse::json(
+        500,
+        r#"{"error":"disabled auto-publish must not write"}"#,
+    )]);
+    let client = GitHubClient::new()
+        .with_base_url(format!("http://{}", server.address()))
+        .with_timeout(Duration::from_secs(2));
+    let error = publisher
+        .publish_due(&client, &publish_auth(), &mut opportunity)
+        .expect_err("disabled publisher must not write");
+    assert!(matches!(error, AutoPublishError::NoPendingCountdown));
+    assert!(server.requests().is_empty());
+    assert_no_live_github(&server);
+    assert_eq!(opportunity.status, OpportunityStatus::Verified);
 }

@@ -1,4 +1,5 @@
 pub mod assessment;
+pub mod automation;
 pub mod budget;
 pub mod candidate;
 pub mod command;
