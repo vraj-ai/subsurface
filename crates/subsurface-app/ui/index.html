@@ -884,7 +884,77 @@
       color: var(--text-muted);
     }
 
-    .excavate-surfaces {
+    .file-tree-row {
+      padding: 4px 8px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-family: var(--font-code);
+      font-size: 12px;
+      color: var(--text-secondary);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .file-tree-row:hover {
+      background: var(--bg-card);
+      color: var(--text-primary);
+    }
+
+    .file-tree-row.active,
+    .file-tree-row[data-selected="true"] {
+      background: var(--bg-selected);
+      color: var(--accent-blue);
+      font-weight: 600;
+    }
+
+    .file-tree-row[data-kind="directory"] {
+      color: var(--text-primary);
+    }
+
+    .tree-twist {
+      width: 10px;
+      flex-shrink: 0;
+      color: var(--text-muted);
+      font-size: 10px;
+    }
+
+    [data-surface=tree] {
+      display: none;
+    }
+
+    [data-surface=code] {
+      display: none;
+    }
+
+    body[data-mode=excavate] [data-surface=opportunities] {
+      display: none;
+    }
+
+    body[data-mode=excavate] [data-surface=tree] {
+      display: flex;
+    }
+
+    body[data-mode=excavate] [data-surface=assessment] {
+      display: none;
+    }
+
+    body[data-mode=excavate] [data-surface=strata] {
+      display: none;
+    }
+
+    body[data-mode=excavate] [data-surface=code] {
+      display: flex;
+    }
+
+    body[data-mode=excavate] #directExcavateBtn {
+      display: none;
+    }
+
+    body:not([data-mode=excavate]) #leaveExcavateBtn {
       display: none;
     }
 
@@ -928,6 +998,8 @@
 
     <div class="shell-chrome" style="display: flex; align-items: center; gap: 10px;">
       <button class="small" id="assessProjectBtn" onclick="assessProject()">Assess project</button>
+      <button type="button" class="small" id="directExcavateBtn" data-enters="excavate" aria-label="Direct Excavate" onclick="enterExcavateMode()">Excavate</button>
+      <button type="button" class="small" id="leaveExcavateBtn" data-leaves="excavate" onclick="leaveExcavateMode()">Opportunities</button>
       <div id="activeModelPill" class="provider-pill" onclick="openSettingsModal()">
         <span>gpt-4o</span>
       </div>
@@ -978,6 +1050,20 @@
         </div>
         <div id="opportunityRoster" class="opportunity-roster">
           <p class="empty-verb">Assess this Project to list Opportunities, or excavate a selected range.</p>
+        </div>
+      </aside>
+
+      <aside class="panel" data-surface="tree" data-shell-region="left">
+        <div class="panel-header">
+          <span>Files</span>
+          <span id="fileCount" style="font-size: 10px; color: var(--text-muted);">0 files</span>
+        </div>
+        <div class="panel-body">
+          <input type="text" id="fileFilter" placeholder="Filter files…" style="width: 100%; margin-bottom: 8px;" oninput="filterFiles()" />
+          <div id="siteMeta" style="font-size: 11px; color: var(--text-muted); margin-bottom: 8px;"></div>
+          <ul class="file-tree" id="fileList" data-tree="project">
+            <li class="empty-verb">Open a Project to inspect files. Direct Excavate stays on this Shell.</li>
+          </ul>
         </div>
       </aside>
 
@@ -1050,24 +1136,7 @@
             </div>
           </section>
         </article>
-      </div>
-    </div>
-
-    <div class="excavate-surfaces" id="excavateSurfaces" hidden>
-      <div class="panel">
-        <div class="panel-header">
-          <span>Files</span>
-          <span id="fileCount" style="font-size: 10px; color: var(--text-muted);">0 files</span>
-        </div>
-        <div class="panel-body">
-          <input type="text" id="fileFilter" placeholder="Filter files..." style="width: 100%; margin-bottom: 8px;" oninput="filterFiles()" />
-          <div id="siteMeta" style="font-size: 11px; color: var(--text-muted); margin-bottom: 8px;"></div>
-          <ul class="file-tree" id="fileList">
-            <li style="color: var(--text-muted); padding: 8px;">Open a Project to inspect files. Direct excavate stays on this Shell.</li>
-          </ul>
-        </div>
-      </div>
-      <div class="code-viewer-container">
+        <article class="code-viewer-container" data-surface="code" data-shell-region="center" id="codeSurface">
         <div class="code-toolbar">
           <div style="font-family: var(--font-code); font-size: 12px; color: var(--text-secondary);" id="currentFilePath">No file selected</div>
           <div style="display: flex; align-items: center; gap: 8px;">
@@ -1081,6 +1150,7 @@
             Select a file from the repository to inspect code, then select lines to Excavate.
           </div>
         </div>
+        </article>
       </div>
     </div>
   </div>
@@ -1289,6 +1359,23 @@
       document.getElementById("codeView").classList.add("active");
     }
 
+    async function enterExcavateMode() {
+      if (!currentSite) {
+        alert("Open a Project first.");
+        return;
+      }
+      document.body.dataset.mode = "excavate";
+      document.getElementById("homeView").classList.remove("active");
+      document.getElementById("codeView").classList.add("active");
+      await refreshProjectTree();
+    }
+
+    function leaveExcavateMode() {
+      document.body.dataset.mode = "shell";
+      document.getElementById("homeView").classList.remove("active");
+      document.getElementById("codeView").classList.add("active");
+    }
+
     function showPickerError(message) {
       const err = document.getElementById("pickerError");
       const empty = document.getElementById("pickerEmpty");
@@ -1379,7 +1466,7 @@
             " · " + project.total_commits_estimate + " commits</div>" +
             "<div>" + (project.is_shallow ? "Shallow clone" : "Full history") +
             " · " + (project.has_remote ? "Remote configured" : "Local repository") + "</div>";
-          renderFileList(project.tracked_files);
+          await refreshProjectTree();
           if (project.tracked_files.length > 0) {
             loadFile(project.tracked_files[0]);
           }
@@ -1413,31 +1500,100 @@
       }
     }
 
-    function renderFileList(files) {
+    function bindFileTreeClicks() {
       const list = document.getElementById("fileList");
-      document.getElementById("fileCount").innerText = `${files.length} files`;
-      list.innerHTML = "";
-      files.forEach(f => {
-        const li = document.createElement("li");
-        li.className = "file-item" + (f === currentFile ? " active" : "");
-        li.innerText = f;
-        li.onclick = () => loadFile(f);
-        list.appendChild(li);
+      if (!list || list.dataset.bound === "true") return;
+      list.dataset.bound = "true";
+      list.addEventListener("click", function (event) {
+        const row = event.target.closest("[data-tree-path]");
+        if (!row) return;
+        const path = row.getAttribute("data-tree-path");
+        const kind = row.getAttribute("data-kind");
+        if (kind === "directory") {
+          toggleTreeEntry(path);
+        } else {
+          selectTreeFile(path);
+        }
       });
     }
 
-    function filterFiles() {
+    function renderProjectTree(rows) {
+      const list = document.getElementById("fileList");
+      if (!list) return;
+      bindFileTreeClicks();
+      const files = currentSite && currentSite.tracked_files ? currentSite.tracked_files : [];
+      const count = document.getElementById("fileCount");
+      if (count) count.innerText = files.length + " files";
+      if (!rows || !rows.length) {
+        list.innerHTML = '<li class="empty-verb">Open a Project to inspect files. Direct Excavate stays on this Shell.</li>';
+        return;
+      }
+      list.innerHTML = rows.map(function (row) {
+        const kind = row.kind === "directory" ? "directory" : "file";
+        const twist = kind === "directory" ? (row.expanded ? "\u25BE" : "\u25B8") : "";
+        const selected = (row.selected || row.path === currentFile);
+        const active = selected ? " active" : "";
+        const pad = 8 + (row.depth || 0) * 12;
+        return '<li class="file-tree-row file-item' + active + '" data-tree-path="' + escapeHtml(row.path) + '" data-kind="' + kind + '" data-depth="' + (row.depth || 0) + '" data-expanded="' + (row.expanded ? "true" : "false") + '" data-selected="' + (selected ? "true" : "false") + '" style="padding-left:' + pad + 'px">'
+          + '<span class="tree-twist">' + twist + '</span>'
+          + '<span>' + escapeHtml(row.name || row.path) + '</span>'
+          + '</li>';
+      }).join("");
+    }
+
+    async function refreshProjectTree() {
       if (!currentSite) return;
-      const q = document.getElementById("fileFilter").value.toLowerCase();
-      const filtered = currentSite.tracked_files.filter(f => f.toLowerCase().includes(q));
-      renderFileList(filtered);
+      const input = document.getElementById("fileFilter");
+      const filter = input ? input.value : "";
+      try {
+        const rows = filter
+          ? await invokeBackend("project_tree_filter", { path: currentSite.root_path, filter: filter })
+          : await invokeBackend("project_tree_rows", { path: currentSite.root_path });
+        renderProjectTree(rows);
+      } catch (err) {
+        console.error("Project tree failed:", err);
+        renderProjectTree([]);
+      }
+    }
+
+    async function toggleTreeEntry(entryPath) {
+      if (!currentSite) return;
+      try {
+        const rows = await invokeBackend("project_tree_toggle", {
+          path: currentSite.root_path,
+          entryPath: entryPath
+        });
+        renderProjectTree(rows);
+      } catch (err) {
+        console.error("Toggle tree failed:", err);
+      }
+    }
+
+    async function selectTreeFile(entryPath) {
+      if (!currentSite) return;
+      try {
+        const rows = await invokeBackend("project_tree_select", {
+          path: currentSite.root_path,
+          entryPath: entryPath
+        });
+        renderProjectTree(rows);
+      } catch (err) {
+        console.error("Select tree failed:", err);
+      }
+      await loadFile(entryPath);
+    }
+
+    function filterFiles() {
+      refreshProjectTree();
     }
 
     async function loadFile(relPath) {
       currentFile = relPath;
       document.getElementById("currentFilePath").innerText = relPath;
-      document.querySelectorAll(".file-item").forEach(el => {
-        el.classList.toggle("active", el.innerText === relPath);
+      document.querySelectorAll("[data-tree-path]").forEach(el => {
+        const on = el.getAttribute("data-tree-path") === relPath;
+        el.classList.toggle("active", on);
+        el.setAttribute("data-selected", on ? "true" : "false");
       });
 
       try {
