@@ -729,7 +729,8 @@ fn shell_has_quality_rail_opportunities_assessment_activity() {
         "Opportunities occupy the left Shell region at rest"
     );
     assert!(
-        UI_BUNDLE[assess_pos.saturating_sub(240)..assess_pos + 120].contains("data-shell-region=\"center\"")
+        UI_BUNDLE[assess_pos.saturating_sub(240)..assess_pos + 120]
+            .contains("data-shell-region=\"center\"")
             || attr_values(&assessment, "data-shell-region")
                 .iter()
                 .any(|v| v == "center"),
@@ -766,6 +767,127 @@ fn shell_has_quality_rail_opportunities_assessment_activity() {
     );
 }
 
+#[test]
+fn excavate_mode_swaps_left_to_tree() {
+    assert!(
+        UI_BUNDLE.contains("data-enters=\"excavate\"")
+            && UI_BUNDLE.contains("aria-label=\"Direct Excavate\""),
+        "Direct Excavate must be available from the Shell"
+    );
+    assert!(
+        UI_BUNDLE.contains("function enterExcavateMode"),
+        "Direct Excavate must enter Excavate mode from the Shell"
+    );
+    let enter = js_function_body(UI_BUNDLE, "enterExcavateMode");
+    assert!(
+        enter.contains("excavate")
+            && (enter.contains("dataset.mode") || enter.contains("data-mode")),
+        "entering Excavate must set Shell mode to excavate, got {enter}"
+    );
+
+    let tree = extract_surface(UI_BUNDLE, "tree");
+    assert!(
+        tree.contains("file-tree") && tree.contains("data-tree=\"project\""),
+        "Excavate mode left column must be the hierarchical Project file tree"
+    );
+    assert!(
+        attr_values(&tree, "data-shell-region")
+            .iter()
+            .any(|value| value == "left"),
+        "the file tree occupies the left Shell region in Excavate mode"
+    );
+    let opportunities = extract_surface(UI_BUNDLE, "opportunities");
+    assert!(
+        attr_values(&opportunities, "data-shell-region")
+            .iter()
+            .any(|value| value == "left"),
+        "Opportunities still own the left region at rest"
+    );
+    assert!(
+        css_block(
+            UI_BUNDLE,
+            "body[data-mode=excavate] [data-surface=opportunities]"
+        )
+        .contains("display: none"),
+        "Excavate must swap Opportunities off the left column"
+    );
+    assert!(
+        css_block(UI_BUNDLE, "body[data-mode=excavate] [data-surface=tree]")
+            .contains("display: flex"),
+        "Excavate must show the file tree in the left column"
+    );
+
+    let shell_css = css_block(UI_BUNDLE, ".shell-layout");
+    assert!(
+        shell_css.contains("grid-template-columns: 280px minmax(0, 1fr)"),
+        "Excavate swaps the left column; it must not insert a fourth pane"
+    );
+    assert!(
+        !UI_BUNDLE.contains("class=\"excavate-surfaces\""),
+        "tree and code must occupy the existing Shell columns, not a new excavate pane"
+    );
+
+    let code = extract_surface(UI_BUNDLE, "code");
+    assert!(
+        code.contains("code-content") || code.contains("id=\"codeContainer\""),
+        "center must become code while excavating"
+    );
+    assert!(
+        attr_values(&code, "data-shell-region")
+            .iter()
+            .any(|value| value == "center"),
+        "code occupies the center Shell region while excavating"
+    );
+    assert!(
+        css_block(
+            UI_BUNDLE,
+            "body[data-mode=excavate] [data-surface=assessment]"
+        )
+        .contains("display: none"),
+        "Project Assessment yields the center while excavating"
+    );
+    assert!(
+        css_block(UI_BUNDLE, "body[data-mode=excavate] [data-surface=code]")
+            .contains("display: flex"),
+        "center is code while excavating"
+    );
+
+    let rail = extract_surface(UI_BUNDLE, "quality-rail");
+    let activity = extract_surface(UI_BUNDLE, "activity");
+    assert!(
+        rail.contains("quality-rail") && activity.contains("activity-strip"),
+        "Quality Rail and Activity remain while excavating"
+    );
+    assert!(
+        !tree.contains("data-surface=\"quality-rail\"")
+            && !tree.contains("data-surface=\"activity\"")
+            && !code.contains("data-surface=\"quality-rail\"")
+            && !code.contains("data-surface=\"activity\""),
+        "Quality Rail and Activity stay mounted outside the swapped columns"
+    );
+    assert!(
+        !UI_BUNDLE.contains("body[data-mode=\"excavate\"] [data-surface=\"quality-rail\"]")
+            && !UI_BUNDLE.contains("body[data-mode=\"excavate\"] [data-surface=\"activity\"]")
+            && !UI_BUNDLE.contains("body[data-mode=\"excavate\"] .quality-rail")
+            && !UI_BUNDLE.contains("body[data-mode=\"excavate\"] .activity-strip"),
+        "Excavate mode must not hide the Quality Rail or Activity"
+    );
+
+    assert!(
+        UI_BUNDLE.contains("data-leaves=\"excavate\"")
+            && UI_BUNDLE.contains("function leaveExcavateMode"),
+        "leaving Excavate must be available on the Shell"
+    );
+    let leave = js_function_body(UI_BUNDLE, "leaveExcavateMode");
+    assert!(
+        leave.contains("shell") && (leave.contains("dataset.mode") || leave.contains("data-mode")),
+        "leaving Excavate restores the Shell so Opportunities return on the left, got {leave}"
+    );
+    assert!(
+        css_block(UI_BUNDLE, "[data-surface=tree]").contains("display: none"),
+        "at rest the tree is not beside Opportunities"
+    );
+}
 
 fn picker_mentions_site(markup: &str) -> bool {
     markup

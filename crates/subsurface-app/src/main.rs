@@ -20,6 +20,7 @@ use subsurface_engine::report::{estimate_site_report_cost, generate_site_report,
 use subsurface_engine::site::{RecentSitesStore, Site};
 use subsurface_engine::staleness::{detect_staleness, StalenessStatus};
 use subsurface_engine::store::{ActivityRecord, ActivityStatus, FieldNote, SqliteStore};
+use subsurface_engine::tree::{ProjectTree, VisibleRow};
 use subsurface_engine::workspace::{discover_git_repositories, get_default_scan_roots, DiscoveredSiteInfo};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -282,6 +283,61 @@ fn read_file_content(site_path: String, rel_path: String) -> Result<String, Stri
     let root = PathBuf::from(site_path);
     let full = root.join(rel_path);
     fs::read_to_string(&full).map_err(|e| e.to_string())
+}
+
+fn load_project_tree(path: &str, state: &AppState) -> Result<ProjectTree, String> {
+    let project = Project::open(PathBuf::from(path)).map_err(|e| e.to_string())?;
+    let mut tree = ProjectTree::from_project(&project);
+    if let Ok(Some(saved)) = state.store.load_tree_state(tree.project_path()) {
+        tree.apply_state(&saved);
+    }
+    Ok(tree)
+}
+
+fn persist_project_tree(tree: &ProjectTree, state: &AppState) -> Result<Vec<VisibleRow>, String> {
+    let _ = state
+        .store
+        .save_tree_state(tree.project_path(), &tree.snapshot_state());
+    Ok(tree.visible_rows())
+}
+
+#[tauri::command]
+fn project_tree_rows(path: String, state: State<'_, AppState>) -> Result<Vec<VisibleRow>, String> {
+    let tree = load_project_tree(&path, &state)?;
+    Ok(tree.visible_rows())
+}
+
+#[tauri::command]
+fn project_tree_toggle(
+    path: String,
+    entry_path: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<VisibleRow>, String> {
+    let mut tree = load_project_tree(&path, &state)?;
+    tree.toggle_expanded(&entry_path);
+    persist_project_tree(&tree, &state)
+}
+
+#[tauri::command]
+fn project_tree_filter(
+    path: String,
+    filter: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<VisibleRow>, String> {
+    let mut tree = load_project_tree(&path, &state)?;
+    tree.set_filter(filter);
+    persist_project_tree(&tree, &state)
+}
+
+#[tauri::command]
+fn project_tree_select(
+    path: String,
+    entry_path: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<VisibleRow>, String> {
+    let mut tree = load_project_tree(&path, &state)?;
+    tree.select(&entry_path);
+    persist_project_tree(&tree, &state)
 }
 
 #[tauri::command]
@@ -596,6 +652,10 @@ fn main() {
             add_scan_root,
             list_recent_sites,
             read_file_content,
+            project_tree_rows,
+            project_tree_toggle,
+            project_tree_filter,
+            project_tree_select,
             preview_payload,
             excavate_range,
             check_staleness,
