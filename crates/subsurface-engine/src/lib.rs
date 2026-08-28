@@ -1,6 +1,7 @@
 pub mod assessment;
 pub mod budget;
 pub mod candidate;
+pub mod command;
 pub mod confidence;
 pub mod evidence;
 pub mod excavate;
