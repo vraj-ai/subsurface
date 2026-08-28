@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+use std::collections::HashSet;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -7,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use tauri::State;
 
 use subsurface_engine::evidence::LineRange;
+use subsurface_engine::grade::{Grade, LetterGrade};
 use subsurface_engine::excavate::{excavate, provider_prompt, Finding};
 use subsurface_engine::mcp::{McpServer, McpStatus};
 use subsurface_engine::provider::{
@@ -43,6 +45,22 @@ pub struct HomeWorkspaceData {
     pub discovered_sites: Vec<DiscoveredSiteInfo>,
     pub scan_roots: Vec<String>,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProjectRosterRow {
+    pub name: String,
+    pub path: String,
+    pub quality_grade: String,
+    pub last_assessment: String,
+    pub in_flight_activity: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProjectPickerData {
+    pub projects: Vec<ProjectRosterRow>,
+    pub scan_roots: Vec<String>,
+}
+
 
 pub struct AppState {
     pub store: Arc<SqliteStore>,
@@ -121,6 +139,10 @@ fn cancel_project_activity(
 
 #[tauri::command]
 fn get_home_workspace(state: State<'_, AppState>) -> Result<HomeWorkspaceData, String> {
+    load_home_workspace(&state)
+}
+
+fn load_home_workspace(state: &AppState) -> Result<HomeWorkspaceData, String> {
     let workspace_records = state.store.list_workspace_sites().unwrap_or_default();
     let custom_scan_roots = state.store.list_scan_roots().unwrap_or_default();
     let mut all_scan_roots = get_default_scan_roots();
@@ -167,6 +189,68 @@ fn get_home_workspace(state: State<'_, AppState>) -> Result<HomeWorkspaceData, S
         scan_roots: all_scan_roots.iter().map(|p| p.to_string_lossy().to_string()).collect(),
     })
 }
+
+fn format_overall_grade(grade: Grade) -> String {
+    match grade {
+        Grade::Incomplete => "Incomplete".to_string(),
+        Grade::Letter(LetterGrade::APlus) => "A+".to_string(),
+        Grade::Letter(LetterGrade::A) => "A".to_string(),
+        Grade::Letter(LetterGrade::B) => "B".to_string(),
+        Grade::Letter(LetterGrade::C) => "C".to_string(),
+        Grade::Letter(LetterGrade::D) => "D".to_string(),
+        Grade::Letter(LetterGrade::F) => "F".to_string(),
+    }
+}
+
+fn roster_row_for(info: &DiscoveredSiteInfo, store: &SqliteStore) -> ProjectRosterRow {
+    let assessments = store.list_assessments(&info.path).unwrap_or_default();
+    let (quality_grade, last_assessment) = match assessments.first() {
+        Some(assessment) => (
+            format_overall_grade(assessment.grade.overall),
+            assessment.assessed_at.clone(),
+        ),
+        None => ("Incomplete".to_string(), "Never assessed".to_string()),
+    };
+    let in_flight_activity = store
+        .list_activities(&info.path)
+        .unwrap_or_default()
+        .into_iter()
+        .find(|activity| {
+            matches!(activity.status, ActivityStatus::Queued | ActivityStatus::Running)
+        })
+        .map(|activity| activity.title)
+        .unwrap_or_else(|| "None".to_string());
+    ProjectRosterRow {
+        name: info.name.clone(),
+        path: info.path.to_string_lossy().to_string(),
+        quality_grade,
+        last_assessment,
+        in_flight_activity,
+    }
+}
+
+#[tauri::command]
+fn list_picker_projects(state: State<'_, AppState>) -> Result<ProjectPickerData, String> {
+    let home = load_home_workspace(&state)?;
+    let mut seen = HashSet::new();
+    let mut projects = Vec::new();
+    for info in home
+        .pinned_sites
+        .iter()
+        .chain(home.recent_sites.iter())
+        .chain(home.discovered_sites.iter())
+    {
+        if !seen.insert(info.path.clone()) {
+            continue;
+        }
+        projects.push(roster_row_for(info, &state.store));
+    }
+    Ok(ProjectPickerData {
+        projects,
+        scan_roots: home.scan_roots,
+    })
+}
+
 
 #[tauri::command]
 fn toggle_pin_site(site_path: String, state: State<'_, AppState>) -> Result<bool, String> {
@@ -507,6 +591,7 @@ fn main() {
             list_project_activities,
             cancel_project_activity,
             get_home_workspace,
+            list_picker_projects,
             toggle_pin_site,
             add_scan_root,
             list_recent_sites,

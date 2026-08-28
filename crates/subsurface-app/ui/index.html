@@ -177,121 +177,112 @@
       display: flex;
     }
 
-    /* Home Workspace View */
-    .home-workspace {
+    body[data-mode="picker"] .shell-chrome {
+      display: none;
+    }
+
+    .project-picker {
       flex: 1;
       background: var(--bg-dark);
       flex-direction: column;
       overflow-y: auto;
-      padding: 24px 36px;
+      padding: 24px 36px 48px;
     }
 
-    .home-hero {
-      margin-bottom: 24px;
+    .picker-hero {
+      margin-bottom: 20px;
       display: flex;
       justify-content: space-between;
       align-items: flex-end;
+      gap: 16px;
       border-bottom: 1px solid var(--border-color);
       padding-bottom: 18px;
     }
 
-    .workspace-section {
-      margin-bottom: 32px;
+    .picker-hero h1 {
+      font-size: var(--text-size-display);
+      font-weight: 600;
+      margin-bottom: 4px;
     }
 
-    .workspace-section-title {
+    .picker-lede {
+      color: var(--text-secondary);
       font-size: 13px;
-      font-weight: 600;
-      color: var(--text-secondary);
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      margin-bottom: 12px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
     }
 
-    .project-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-      gap: 14px;
-    }
-
-    .project-card {
-      background: var(--bg-panel);
-      border: 1px solid var(--border-color);
-      border-radius: 8px;
-      padding: 16px;
-      display: flex;
-      flex-direction: column;
-      justify-content: space-between;
-      cursor: pointer;
-      position: relative;
-    }
-
-    .project-card:hover {
-      background: var(--bg-card-hover);
-      border-color: var(--accent-blue);
-    }
-
-    .project-card-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-      margin-bottom: 8px;
-    }
-
-    .project-name {
-      font-size: 15px;
-      font-weight: 600;
-      color: var(--text-primary);
-      word-break: break-all;
-    }
-
-    .pin-btn {
-      background: transparent;
-      border: none;
-      font-size: 16px;
-      cursor: pointer;
-      color: var(--text-muted);
-      padding: 2px;
-    }
-
-    .pin-btn.pinned {
-      color: var(--accent-amber);
-    }
-
-    .project-path {
-      font-family: var(--font-code);
-      font-size: 11px;
-      color: var(--text-muted);
-      margin-bottom: 12px;
-      word-break: break-all;
-    }
-
-    .project-tags {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 6px;
-      margin-bottom: 14px;
-    }
-
-    .meta-tag {
-      background: var(--bg-card);
-      border: 1px solid var(--border-color);
-      color: var(--text-secondary);
-      padding: 2px 6px;
-      border-radius: 4px;
-      font-size: 11px;
-      font-family: var(--font-code);
-    }
-
-    .project-actions {
+    .picker-open {
       display: flex;
       gap: 8px;
+      flex-shrink: 0;
+    }
+
+    .picker-search {
+      width: 100%;
+      max-width: 500px;
+      margin-bottom: 16px;
+    }
+
+    .project-roster {
+      display: flex;
+      flex-direction: column;
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      overflow: hidden;
+      background: var(--bg-panel);
+    }
+
+    .project-roster-head,
+    .project-roster-row {
+      display: grid;
+      grid-template-columns: minmax(8rem, 1.1fr) minmax(10rem, 1.6fr) 7rem 10rem minmax(8rem, 1.2fr);
+      gap: 12px;
+      align-items: center;
+      padding: 8px 12px;
+      width: 100%;
+    }
+
+    .project-roster-head {
+      background: var(--bg-panel-header);
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.4px;
+      text-transform: uppercase;
+      color: var(--text-secondary);
+    }
+
+    .project-roster-row {
+      background: transparent;
+      border: 0;
       border-top: 1px solid var(--border-color);
-      padding-top: 12px;
-      margin-top: 4px;
+      border-radius: 0;
+      text-align: left;
+      color: var(--text-primary);
+      cursor: pointer;
+      font: inherit;
+    }
+
+    .project-roster-row:hover {
+      background: var(--bg-card-hover);
+    }
+
+    .picker-name {
+      font-weight: 600;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .picker-path {
+      font-family: var(--font-code);
+      font-size: var(--text-size-meta);
+      color: var(--text-muted);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .picker-states {
+      margin-top: 16px;
     }
 
     /* 3-Pane Explorer View */
@@ -841,15 +832,15 @@
     }
   </style>
 </head>
-<body>
+<body data-mode="picker">
   <header>
     <div style="display: flex; align-items: center; gap: 16px;">
-      <div class="brand" onclick="showHomeView()">
+      <div class="brand" onclick="showProjectPicker()">
         <span>Subsurface</span>
         <span class="brand-tag">v1.1</span>
       </div>
-      <div class="nav-tabs">
-        <button class="nav-btn active" id="btnNavHome" onclick="showHomeView()">
+      <div class="nav-tabs shell-chrome">
+        <button class="nav-btn" id="btnNavPicker" onclick="showProjectPicker()">
           <span>Projects</span>
         </button>
         <button class="nav-btn" id="btnNavCode" onclick="showCodeView()">
@@ -858,7 +849,7 @@
       </div>
     </div>
 
-    <div class="quality-rail" aria-label="Quality rail">
+    <div class="quality-rail shell-chrome" aria-label="Quality rail">
       <span class="quality-rail-grade" data-grade="incomplete">Incomplete</span>
       <ol class="quality-rail-layers">
         <li data-dimension="correctness">Correctness</li>
@@ -870,13 +861,13 @@
       </ol>
     </div>
 
-    <div class="header-center">
+    <div class="header-center shell-chrome">
       <span id="activeProjectBreadcrumb" style="font-family: var(--font-code); font-size: 11px; color: var(--text-muted); text-overflow: ellipsis; overflow: hidden; white-space: nowrap;">
         No project open
       </span>
     </div>
 
-    <div style="display: flex; align-items: center; gap: 10px;">
+    <div class="shell-chrome" style="display: flex; align-items: center; gap: 10px;">
       <button class="small" id="assessProjectBtn" onclick="assessProject()">Assess project</button>
       <div id="activeModelPill" class="provider-pill" onclick="openSettingsModal()">
         <span>gpt-4o</span>
@@ -885,53 +876,38 @@
     </div>
   </header>
 
-  <!-- View 1: Home Workspace -->
-  <div class="view-container home-workspace active" id="homeView">
-    <div class="home-hero">
+  <!-- Launch: Project Picker roster -->
+  <main class="view-container project-picker active" id="homeView" data-surface="picker">
+    <div class="picker-hero">
       <div>
-        <h1 style="font-size: var(--text-size-display); font-weight: 600; margin-bottom: 4px;">Projects</h1>
-        <div style="color: var(--text-secondary); font-size: 13px;">
-          Choose a project to assess, or excavate a selected range.
-        </div>
+        <h1>Project Picker</h1>
+        <p class="picker-lede">Choose a Project to open in the Shell.</p>
       </div>
-      <div style="display: flex; gap: 8px;">
-        <input type="text" id="manualSitePath" placeholder="Enter /path/to/project..." style="width: 280px;" />
-        <button class="primary" onclick="openManualPath()">Open path</button>
-        <button onclick="refreshHomeWorkspace()">Refresh</button>
+      <div class="picker-open">
+        <input type="text" id="manualProjectPath" placeholder="Enter a Project path…" style="width: 280px;" />
+        <button class="primary" onclick="openManualPath()">Open Project</button>
+        <button onclick="refreshProjectPicker()">Scan Projects</button>
       </div>
     </div>
 
-    <div style="margin-bottom: 20px;">
-      <input type="text" id="workspaceSearch" placeholder="Search projects by name or path..." style="width: 100%; max-width: 500px;" oninput="filterWorkspaceCards()" />
+    <input type="text" id="pickerSearch" class="picker-search" placeholder="Search Projects by name or path…" oninput="filterProjectRoster()" />
+
+    <div class="project-roster" data-opens="shell">
+      <div class="project-roster-head">
+        <span data-picker-field="name">Name</span>
+        <span data-picker-field="path">Path</span>
+        <span data-picker-field="quality-grade">Quality Grade</span>
+        <span data-picker-field="last-assessment">Last Assessment</span>
+        <span data-picker-field="in-flight-activity">In-flight Activity</span>
+      </div>
+      <div id="projectRosterBody"></div>
     </div>
 
-    <!-- Section: Pinned Projects -->
-    <div class="workspace-section" id="sectionPinned" style="display: none;">
-      <div class="workspace-section-title">
-        <span>Pinned repositories</span>
-      </div>
-      <div class="project-grid" id="gridPinned"></div>
+    <div class="picker-states">
+      <p class="empty-verb" data-picker-state="empty" id="pickerEmpty">No Projects yet. Enter a Project path and open it.</p>
+      <p class="empty-verb" data-picker-state="error" id="pickerError" hidden>This path is missing. Enter a Project path that exists and open it.</p>
     </div>
-
-    <!-- Section: Recently Excavated -->
-    <div class="workspace-section" id="sectionRecent">
-      <div class="workspace-section-title">
-        <span>Recently excavated</span>
-      </div>
-      <div class="project-grid" id="gridRecent">
-        <div style="color: var(--text-muted); font-size: 12px;">Loading recent sites...</div>
-      </div>
-    </div>
-
-    <!-- Section: Discovered Repositories -->
-    <div class="workspace-section" id="sectionDiscovered">
-      <div class="workspace-section-title">
-        <span>Discovered repositories</span>
-        <span id="scanRootsLabel" style="font-size: 11px; color: var(--text-muted); font-weight: normal; font-family: var(--font-code);"></span>
-      </div>
-      <div class="project-grid" id="gridDiscovered"></div>
-    </div>
-  </div>
+  </main>
 
   <!-- View 2: 3-Pane Explorer -->
   <div class="view-container" id="codeView">
@@ -1031,7 +1007,7 @@
     </div>
   </div>
 
-  <aside class="activity-strip" id="activityStrip" data-surface="activity">
+  <aside class="activity-strip shell-chrome" id="activityStrip" data-surface="activity">
     <h2 class="activity-heading">Activity</h2>
     <ol class="activity-list" id="activityList" data-activity-list>
       <li class="empty-verb" data-activity-empty>No in-flight work.</li>
@@ -1215,151 +1191,144 @@
       }
 
       // Load Home Workspace
-      await refreshHomeWorkspace();
+      await refreshProjectPicker();
       await refreshActivityCenter();
     });
 
-    function showHomeView() {
+    function showProjectPicker() {
+      document.body.dataset.mode = "picker";
       document.getElementById("homeView").classList.add("active");
       document.getElementById("codeView").classList.remove("active");
-      document.getElementById("btnNavHome").classList.add("active");
-      document.getElementById("btnNavCode").classList.remove("active");
+      const pickerBtn = document.getElementById("btnNavPicker");
+      const codeBtn = document.getElementById("btnNavCode");
+      if (pickerBtn) pickerBtn.classList.add("active");
+      if (codeBtn) codeBtn.classList.remove("active");
+    }
+
+    function showHomeView() {
+      showProjectPicker();
     }
 
     function showCodeView() {
+      document.body.dataset.mode = "shell";
       document.getElementById("homeView").classList.remove("active");
       document.getElementById("codeView").classList.add("active");
-      document.getElementById("btnNavHome").classList.remove("active");
-      document.getElementById("btnNavCode").classList.add("active");
+      const pickerBtn = document.getElementById("btnNavPicker");
+      const codeBtn = document.getElementById("btnNavCode");
+      if (pickerBtn) pickerBtn.classList.remove("active");
+      if (codeBtn) codeBtn.classList.add("active");
     }
 
-    async function refreshHomeWorkspace() {
+    function showPickerError(message) {
+      const err = document.getElementById("pickerError");
+      const empty = document.getElementById("pickerEmpty");
+      if (empty) empty.hidden = true;
+      if (err) {
+        err.hidden = false;
+        err.textContent = message;
+      }
+    }
+
+    function hidePickerError() {
+      const err = document.getElementById("pickerError");
+      if (err) err.hidden = true;
+    }
+
+    async function refreshProjectPicker() {
+      const empty = document.getElementById("pickerEmpty");
+      const body = document.getElementById("projectRosterBody");
       try {
-        const data = await invokeBackend("get_home_workspace");
-        if (data) {
-          homeWorkspaceData = data;
-          renderHomeWorkspace(data);
-        }
+        const data = await invokeBackend("list_picker_projects");
+        hidePickerError();
+        homeWorkspaceData = data;
+        renderProjectPicker(data);
       } catch (err) {
-        console.error("Failed to load workspace:", err);
+        if (body) body.innerHTML = "";
+        if (empty) empty.hidden = true;
+        showPickerError("Projects could not be listed. Enter a Project path and open it.");
       }
     }
 
-    function renderHomeWorkspace(data) {
-      if (data.scan_roots && data.scan_roots.length > 0) {
-        document.getElementById("scanRootsLabel").innerText = `Scanned in: ${data.scan_roots.join(", ")}`;
+    function renderProjectPicker(data) {
+      const body = document.getElementById("projectRosterBody");
+      const empty = document.getElementById("pickerEmpty");
+      const projects = (data && data.projects) ? data.projects : [];
+      if (!body) return;
+      if (!projects.length) {
+        body.innerHTML = "";
+        if (empty) empty.hidden = false;
+        return;
       }
-
-      // 1. Pinned
-      const pinnedSection = document.getElementById("sectionPinned");
-      const pinnedGrid = document.getElementById("gridPinned");
-      if (data.pinned_sites && data.pinned_sites.length > 0) {
-        pinnedSection.style.display = "block";
-        pinnedGrid.innerHTML = data.pinned_sites.map(s => renderProjectCardHtml(s)).join("");
-      } else {
-        pinnedSection.style.display = "none";
-      }
-
-      // 2. Recent
-      const recentGrid = document.getElementById("gridRecent");
-      if (data.recent_sites && data.recent_sites.length > 0) {
-        recentGrid.innerHTML = data.recent_sites.map(s => renderProjectCardHtml(s)).join("");
-      } else {
-        recentGrid.innerHTML = `<div style="color: var(--text-muted); font-size: 12px;">No recently excavated repositories. Select one from Discovered below or enter a path.</div>`;
-      }
-
-      // 3. Discovered
-      const discGrid = document.getElementById("gridDiscovered");
-      if (data.discovered_sites && data.discovered_sites.length > 0) {
-        discGrid.innerHTML = data.discovered_sites.map(s => renderProjectCardHtml(s)).join("");
-      } else {
-        discGrid.innerHTML = `<div style="color: var(--text-muted); font-size: 12px;">No other repositories discovered in scan roots.</div>`;
-      }
+      if (empty) empty.hidden = true;
+      body.innerHTML = projects.map(renderProjectRosterRow).join("");
     }
 
-    function renderProjectCardHtml(site) {
-      const isPinned = !!site.is_pinned;
-      const headShort = site.head_commit ? site.head_commit.substring(0, 7) : 'None';
-      const notesLabel = site.field_notes_count > 0 ? `${site.field_notes_count} notes` : '0 notes';
-      const pathEscaped = escapeHtml(site.path);
-
-      return `
-        <div class="project-card" onclick="openProjectFromCard('${pathEscaped}')">
-          <div>
-            <div class="project-card-header">
-              <span class="project-name">${escapeHtml(site.name)}</span>
-              <button class="pin-btn ${isPinned ? 'pinned' : ''}" onclick="event.stopPropagation(); togglePin('${pathEscaped}')" title="${isPinned ? 'Unpin' : 'Pin'}">
-                ${isPinned ? '★' : '☆'}
-              </button>
-            </div>
-            <div class="project-path">${pathEscaped}</div>
-            <div class="project-tags">
-              <span class="meta-tag">HEAD ${headShort}</span>
-              <span class="meta-tag">${site.total_commits_estimate} commits</span>
-              <span class="meta-tag">${notesLabel}</span>
-              ${site.is_shallow ? '<span class="meta-tag" style="color: var(--status-warn-fg);">⚠️ Shallow</span>' : ''}
-            </div>
-          </div>
-          <div class="project-actions" onclick="event.stopPropagation()">
-            <button class="primary small" onclick="openProjectFromCard('${pathEscaped}')">Open code</button>
-            <button class="small" onclick="openProjectAndAssess('${pathEscaped}')">Assess project</button>
-          </div>
-        </div>
-      `;
+    function renderProjectRosterRow(project) {
+      const path = escapeHtml(project.path);
+      return '<button type="button" class="project-roster-row" data-opens="shell" data-path="' + path + '" onclick="openProjectFromRoster(this.dataset.path)">'
+        + '<span class="picker-name">' + escapeHtml(project.name) + '</span>'
+        + '<span class="picker-path">' + path + '</span>'
+        + '<span>' + escapeHtml(project.quality_grade) + '</span>'
+        + '<span>' + escapeHtml(project.last_assessment) + '</span>'
+        + '<span>' + escapeHtml(project.in_flight_activity) + '</span>'
+        + '</button>';
     }
 
-    async function togglePin(path) {
-      try {
-        await invokeBackend("toggle_pin_site", { sitePath: path });
-        await refreshHomeWorkspace();
-      } catch (err) {
-        alert("Failed to toggle pin: " + err);
-      }
+    async function openProjectFromRoster(path) {
+      hidePickerError();
+      await loadProject(path);
+      if (currentSite) showCodeView();
     }
 
     async function openProjectFromCard(path) {
-      await loadProject(path);
-      showCodeView();
+      await openProjectFromRoster(path);
     }
 
     async function openProjectAndAssess(path) {
-      await loadProject(path);
-      await assessProject();
+      await openProjectFromRoster(path);
+      if (currentSite) await assessProject();
     }
 
     async function openManualPath() {
-      const p = document.getElementById("manualSitePath").value.trim();
-      if (!p) return;
-      await openProjectFromCard(p);
+      const p = document.getElementById("manualProjectPath").value.trim();
+      if (!p) {
+        showPickerError("Enter a Project path and open it.");
+        return;
+      }
+      await openProjectFromRoster(p);
     }
 
     async function loadProject(path) {
       try {
-        const site = await invokeBackend("open_site", { path: path });
-        if (site) {
-          currentSite = site;
-          document.getElementById("activeProjectBreadcrumb").innerText = `Active: ${site.root_path}`;
-          document.getElementById("siteMeta").innerHTML = `
-            <div><strong>HEAD:</strong> ${site.head_commit ? site.head_commit.substring(0, 7) : 'None'} · ${site.total_commits_estimate} commits</div>
-            <div>${site.is_shallow ? 'Shallow clone' : 'Full history'} · ${site.has_remote ? 'Remote configured' : 'Local repository'}</div>
-          `;
-          renderFileList(site.tracked_files);
-          if (site.tracked_files.length > 0) {
-            loadFile(site.tracked_files[0]);
+        const project = await invokeBackend("open_project", { path: path });
+        if (project) {
+          currentSite = project;
+          document.getElementById("activeProjectBreadcrumb").innerText = "Active: " + project.root_path;
+          document.getElementById("siteMeta").innerHTML =
+            "<div><strong>HEAD:</strong> " + (project.head_commit ? project.head_commit.substring(0, 7) : "None") +
+            " · " + project.total_commits_estimate + " commits</div>" +
+            "<div>" + (project.is_shallow ? "Shallow clone" : "Full history") +
+            " · " + (project.has_remote ? "Remote configured" : "Local repository") + "</div>";
+          renderFileList(project.tracked_files);
+          if (project.tracked_files.length > 0) {
+            loadFile(project.tracked_files[0]);
           }
-          await refreshHomeWorkspace();
+          await refreshProjectPicker();
           await refreshActivityCenter();
         }
       } catch (err) {
-        alert("Failed to open site: " + err);
+        currentSite = null;
+        showProjectPicker();
+        showPickerError("This path is missing. Enter a Project path that exists and open it.");
       }
     }
 
-    function filterWorkspaceCards() {
-      const q = document.getElementById("workspaceSearch").value.toLowerCase();
-      document.querySelectorAll(".project-card").forEach(card => {
-        const text = card.innerText.toLowerCase();
-        card.style.display = text.includes(q) ? "flex" : "none";
+    function filterProjectRoster() {
+      const input = document.getElementById("pickerSearch");
+      const q = input ? input.value.toLowerCase() : "";
+      document.querySelectorAll(".project-roster-row").forEach(row => {
+        const text = row.innerText.toLowerCase();
+        row.style.display = text.includes(q) ? "grid" : "none";
       });
     }
 
@@ -1813,7 +1782,7 @@
           userNotes: note
         });
         alert("Field Note saved!");
-        await refreshHomeWorkspace();
+        await refreshProjectPicker();
       } catch (err) {
         alert("Failed to save note: " + err);
       }
