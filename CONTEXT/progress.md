@@ -1,8 +1,9 @@
 # Progress
 
-- Current milestone: All milestones completed (M1–M5 + Issues #18, #19, #20).
-- Last verified milestone:
-  - Issue #18: UI Provider Settings modal with Keychain storage, presets, and model suggestions (`efbf04e`).
-  - Issue #19: Site Report UX with receipt alert banners, category dashboard, and directory filtering (`429e572`).
-  - Issue #20: Home Workspace dashboard landing view with repository discovery and pinning (`bd77420`).
-- Verification: `cargo test --workspace` passed all 29 tests across engine, evidence engine, confidence rules, staleness receipts, MCP, Site Report, OAuth, and Workspace Auto-Discovery.
+- Current milestone: v1.1 M5 — disposable candidate preparation and verification.
+- Last verified milestone: v1.1 M4 — auditable Opportunity lifecycle, evidenced
+  detectors, inspectable ordering, exact-commit Assessment history and deltas,
+  and previewed cancellable runs with explicit partial results.
+- Verification: all five exact M11 contracts, the full M11 suite,
+  `cargo test --workspace`, and `git diff --check` passed. Independent Grok
+  milestone review: PASS after provenance, exact-commit, and ordering hardening.

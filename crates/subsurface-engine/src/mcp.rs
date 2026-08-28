@@ -6,15 +6,15 @@ use thiserror::Error;
 use crate::evidence::LineRange;
 use crate::excavate::{excavate, Finding};
 use crate::provider::Provider;
-use crate::site::Site;
+use crate::project::Project;
 use crate::store::{FieldNote, SqliteStore};
 
 #[derive(Debug, Error)]
 pub enum McpError {
     #[error("Subsurface is not running or store is unavailable")]
     NotRunning,
-    #[error("Failed to open Site at '{0}': {1}")]
-    SiteOpen(String, String),
+    #[error("Failed to open Project at '{0}': {1}")]
+    ProjectOpen(String, String),
     #[error("Excavate error: {0}")]
     Excavate(String),
     #[error("Store error: {0}")]
@@ -24,13 +24,15 @@ pub enum McpError {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum McpToolCall {
     Excavate {
-        site_path: String,
+        #[serde(alias = "site_path")]
+        project_path: String,
         file_path: String,
         start_line: usize,
         end_line: usize,
     },
     ListFieldNotes {
-        site_path: String,
+        #[serde(alias = "site_path")]
+        project_path: String,
     },
     GetFieldNote {
         id: String,
@@ -84,12 +86,12 @@ impl McpServer {
     pub fn handle_tool_call(&self, call: McpToolCall) -> Result<McpExcavateResult, McpError> {
         match call {
             McpToolCall::Excavate {
-                site_path,
+                project_path,
                 file_path,
                 start_line,
                 end_line,
             } => {
-                let site_buf = PathBuf::from(&site_path);
+                let project_buf = PathBuf::from(&project_path);
                 let range = LineRange {
                     start: start_line,
                     end: end_line,
@@ -111,7 +113,7 @@ impl McpServer {
                 // 1. Check if a saved Field Note already exists for this selection
                 let existing_notes = self
                     .store
-                    .list_field_notes(&site_buf)
+                    .list_field_notes(&project_buf)
                     .map_err(|e| McpError::Store(e.to_string()))?;
 
                 for note in existing_notes {
@@ -124,14 +126,14 @@ impl McpServer {
                 }
 
                 // 2. Otherwise run excavate() and save to shared Field Notes
-                let site = Site::open(&site_buf)
-                    .map_err(|e| McpError::SiteOpen(site_path.clone(), e.to_string()))?;
+                let project = Project::open(&project_buf)
+                    .map_err(|e| McpError::ProjectOpen(project_path.clone(), e.to_string()))?;
 
-                let finding = excavate(&site, &file_path, range, self.provider.clone())
+                let finding = excavate(&project, &file_path, range, self.provider.clone())
                     .map_err(|e| McpError::Excavate(e.to_string()))?;
 
                 let _ = self.store.save_field_note(
-                    &site_buf,
+                    &project_buf,
                     &finding,
                     "Excavated via MCP agent query",
                 );
@@ -145,8 +147,8 @@ impl McpServer {
         }
     }
 
-    pub fn list_field_notes(&self, site_path: &str) -> Result<Vec<FieldNote>, McpError> {
-        let path = PathBuf::from(site_path);
+    pub fn list_field_notes(&self, project_path: &str) -> Result<Vec<FieldNote>, McpError> {
+        let path = PathBuf::from(project_path);
         self.store
             .list_field_notes(&path)
             .map_err(|e| McpError::Store(e.to_string()))

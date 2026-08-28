@@ -14,7 +14,7 @@ use crate::staleness::StalenessStatus;
 
 #[derive(Debug, Error)]
 pub enum ReportError {
-    #[error("Site has no HEAD commit")]
+    #[error("Project has no HEAD commit")]
     NoHeadCommit,
     #[error("Excavate failed: {0}")]
     Excavate(String),
@@ -38,6 +38,7 @@ pub struct SiteReportEntry {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct SiteReport {
+    #[serde(rename = "project_path", alias = "site_path")]
     pub site_path: PathBuf,
     pub generated_at: String,
     pub head_commit: String,

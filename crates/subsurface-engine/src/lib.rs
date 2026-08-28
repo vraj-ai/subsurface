@@ -1,10 +1,14 @@
+pub mod assessment;
 pub mod budget;
 pub mod confidence;
 pub mod evidence;
 pub mod excavate;
 pub mod fixture;
+pub mod grade;
 pub mod mcp;
 pub mod oauth;
+pub mod opportunity;
+pub mod project;
 pub mod provider;
 pub mod report;
 pub mod site;

@@ -1,0 +1,50 @@
+{
+  "milestone": "M1",
+  "verdict": "PASS",
+  "reviewer": "Grok 4.6 High",
+  "range": "c4b5696..9c540c27",
+  "gate": [
+    "cargo test --workspace",
+    "cargo test -p subsurface-engine --test m6_project_migration_tests",
+    "cargo test -p subsurface-engine --test m7_activity_tests",
+    "git diff --check c4b5696..HEAD",
+    "cargo build -p subsurface-app --release"
+  ],
+  "remediated": [
+    "Assessment responses now emit project_path consistently and retain legacy site_path input compatibility.",
+    "Open and assessment workflows persist activity without allowing observability failures to falsify primary outcomes.",
+    "Behavioral tests cover successful and failed terminal activity states."
+  ],
+  "findings": [
+    {
+      "severity": "P2",
+      "file": "crates/subsurface-app/src/main.rs:71",
+      "trigger": "Project::open fails before record_activity",
+      "wrong_behavior": "A failed open leaves no activity row."
+    },
+    {
+      "severity": "P2",
+      "file": "crates/subsurface-app/src/main.rs:106",
+      "trigger": "Activities are listed with a non-canonical caller path",
+      "wrong_behavior": "The query may miss records stored under the canonical root path."
+    },
+    {
+      "severity": "P2",
+      "file": "crates/subsurface-engine/src/store.rs:75",
+      "trigger": "FieldNote is serialized",
+      "wrong_behavior": "Its top-level path remains site_path while nested Finding emits project_path."
+    },
+    {
+      "severity": "P3",
+      "file": "crates/subsurface-app/tests/command_contract_tests.rs:1",
+      "trigger": "The source-shape contract runs",
+      "wrong_behavior": "It supplements rather than replaces behavioral command coverage."
+    }
+  ],
+  "followups": [
+    "Track failed open attempts if future Activity Center scope requires unresolved paths.",
+    "Canonicalize activity-list queries before the Activity Center UI consumes them.",
+    "Emit project_path on FieldNote JSON with a site_path deserialize alias.",
+    "Keep source-shape command tests supplemental to behavioral tests."
+  ]
+}

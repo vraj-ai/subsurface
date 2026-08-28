@@ -25,10 +25,29 @@ _Avoid_: Explanation, summary, insight
 **Confidence**:
 How well the Evidence supports a Finding. May be zero.
 
+**Quality Grade**:
+A strict `A+`–`F` or `Incomplete` assessment of a Site or prepared candidate.
+The overall grade is its lowest measured quality dimension and each deduction
+must have a receipt.
+_Avoid_: Confidence, quality score
+
 **Site Report**:
-A read-only, repo-wide view of a Site: which regions have no recorded rationale,
-which look dead, and which nothing tests. The Excavate engine run across
-everything instead of one selection. It names problems; it never fixes them.
+A repo-wide improvement workspace for a Site. It grades measured quality,
+surfaces Opportunities, and links each one to its Findings and Evidence.
+
+**Opportunity**:
+An evidence-backed candidate for improving a Site, derived from one or more
+Findings and not yet approved for publication or implementation.
+_Avoid_: Issue, suggestion
+
+**Work Item**:
+An approved Opportunity published to an external issue tracker.
+_Avoid_: Opportunity, Finding
+
+**Improvement Receipt**:
+A baseline-to-candidate comparison showing what a prepared change improved,
+which checks prove it, and which risks or failures remain.
+_Avoid_: Quality score, test result
 
 **Field Note**:
 A saved Finding, kept so it can be revisited or shared.

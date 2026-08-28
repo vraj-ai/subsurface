@@ -1,14 +1,17 @@
-use std::path::{Path, PathBuf};
-use std::process::Command;
-use std::sync::Mutex;
 use chrono::Utc;
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
+use std::path::{Path, PathBuf};
+use std::process::Command;
+use std::sync::Mutex;
 use thiserror::Error;
 use uuid::Uuid;
 
+use crate::assessment::ProjectAssessment;
 use crate::evidence::LineRange;
 use crate::excavate::Finding;
+use crate::grade::GradeOverride;
+use crate::provider::{ProviderConnectionPreferences, ProviderKind, ProviderProtocol};
 
 #[derive(Debug, Error)]
 pub enum StoreError {
@@ -20,6 +23,59 @@ pub enum StoreError {
     Io(#[from] std::io::Error),
     #[error("Lock error")]
     Lock,
+    #[error("Unknown activity status: {0}")]
+    InvalidActivityStatus(String),
+    #[error("Unknown provider kind: {0}")]
+    InvalidProviderKind(String),
+    #[error("Unknown provider protocol: {0}")]
+    InvalidProviderProtocol(String),
+    #[error("Provider connection id cannot be empty")]
+    InvalidProviderConnectionId,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ActivityStatus {
+    Queued,
+    Running,
+    Succeeded,
+    Failed,
+    Cancelled,
+}
+
+impl ActivityStatus {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Queued => "queued",
+            Self::Running => "running",
+            Self::Succeeded => "succeeded",
+            Self::Failed => "failed",
+            Self::Cancelled => "cancelled",
+        }
+    }
+
+    fn parse(value: String) -> Result<Self, StoreError> {
+        match value.as_str() {
+            "queued" => Ok(Self::Queued),
+            "running" => Ok(Self::Running),
+            "succeeded" => Ok(Self::Succeeded),
+            "failed" => Ok(Self::Failed),
+            "cancelled" => Ok(Self::Cancelled),
+            _ => Err(StoreError::InvalidActivityStatus(value)),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ActivityRecord {
+    pub id: String,
+    pub project_path: PathBuf,
+    pub kind: String,
+    pub title: String,
+    pub status: ActivityStatus,
+    pub detail: Option<String>,
+    pub created_at: String,
+    pub updated_at: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -76,6 +132,7 @@ impl SqliteStore {
             "CREATE TABLE IF NOT EXISTS field_notes (
                 id TEXT PRIMARY KEY,
                 site_path TEXT NOT NULL,
+                project_path TEXT,
                 file_path TEXT NOT NULL,
                 line_start INTEGER NOT NULL,
                 line_end INTEGER NOT NULL,
@@ -89,6 +146,7 @@ impl SqliteStore {
             
             CREATE TABLE IF NOT EXISTS finding_cache (
                 site_path TEXT NOT NULL,
+                project_path TEXT,
                 file_path TEXT NOT NULL,
                 line_start INTEGER NOT NULL,
                 line_end INTEGER NOT NULL,
@@ -100,6 +158,7 @@ impl SqliteStore {
             
             CREATE TABLE IF NOT EXISTS workspace_sites (
                 site_path TEXT PRIMARY KEY,
+                project_path TEXT,
                 name TEXT NOT NULL,
                 is_pinned INTEGER NOT NULL DEFAULT 0,
                 last_opened TEXT NOT NULL
@@ -107,8 +166,47 @@ impl SqliteStore {
             
             CREATE TABLE IF NOT EXISTS scan_roots (
                 path TEXT PRIMARY KEY
+            );
+
+            CREATE TABLE IF NOT EXISTS activities (
+                id TEXT PRIMARY KEY,
+                project_path TEXT NOT NULL,
+                kind TEXT NOT NULL,
+                title TEXT NOT NULL,
+                status TEXT NOT NULL,
+                detail TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_activities_project_updated
+                ON activities(project_path, updated_at DESC);
+
+            CREATE TABLE IF NOT EXISTS provider_connections (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                provider TEXT NOT NULL,
+                base_url TEXT NOT NULL,
+                model TEXT NOT NULL,
+                protocol TEXT NOT NULL,
+                is_local INTEGER NOT NULL DEFAULT 0,
+                updated_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS project_grade_overrides (
+                project_path TEXT PRIMARY KEY,
+                override_json TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS project_assessments (
+                project_path TEXT NOT NULL,
+                commit_sha TEXT NOT NULL,
+                assessed_at TEXT NOT NULL,
+                assessment_json TEXT NOT NULL,
+                PRIMARY KEY (project_path, commit_sha)
             );",
         )?;
+        migrate_project_paths(&conn)?;
         Ok(())
     }
 
@@ -117,9 +215,9 @@ impl SqliteStore {
         let now = Utc::now().to_rfc3339();
         let conn = self.conn.lock().map_err(|_| StoreError::Lock)?;
         conn.execute(
-            "INSERT INTO workspace_sites (site_path, name, is_pinned, last_opened)
-             VALUES (?1, ?2, 0, ?3)
-             ON CONFLICT(site_path) DO UPDATE SET last_opened = ?3, name = ?2",
+            "INSERT INTO workspace_sites (site_path, project_path, name, is_pinned, last_opened)
+             VALUES (?1, ?1, ?2, 0, ?3)
+             ON CONFLICT(site_path) DO UPDATE SET project_path = ?1, last_opened = ?3, name = ?2",
             params![path_str, name, now],
         )?;
         Ok(())
@@ -128,23 +226,27 @@ impl SqliteStore {
     pub fn toggle_pin_site(&self, site_path: &Path) -> Result<bool, StoreError> {
         let path_str = site_path.to_string_lossy().to_string();
         let conn = self.conn.lock().map_err(|_| StoreError::Lock)?;
-        
+
         let is_pinned: bool;
-        let mut stmt = conn.prepare("SELECT is_pinned FROM workspace_sites WHERE site_path = ?1")?;
+        let mut stmt =
+            conn.prepare("SELECT is_pinned FROM workspace_sites WHERE project_path = ?1")?;
         let mut rows = stmt.query(params![path_str])?;
         if let Some(row) = rows.next()? {
             let current: i32 = row.get(0)?;
             is_pinned = current == 0;
             conn.execute(
-                "UPDATE workspace_sites SET is_pinned = ?1 WHERE site_path = ?2",
+                "UPDATE workspace_sites SET is_pinned = ?1 WHERE project_path = ?2",
                 params![if is_pinned { 1 } else { 0 }, path_str],
             )?;
         } else {
-            let name = site_path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| "repo".to_string());
+            let name = site_path
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| "repo".to_string());
             let now = Utc::now().to_rfc3339();
             is_pinned = true;
             conn.execute(
-                "INSERT INTO workspace_sites (site_path, name, is_pinned, last_opened) VALUES (?1, ?2, 1, ?3)",
+                "INSERT INTO workspace_sites (site_path, project_path, name, is_pinned, last_opened) VALUES (?1, ?1, ?2, 1, ?3)",
                 params![path_str, name, now],
             )?;
         }
@@ -154,7 +256,7 @@ impl SqliteStore {
     pub fn list_workspace_sites(&self) -> Result<Vec<WorkspaceSiteRecord>, StoreError> {
         let conn = self.conn.lock().map_err(|_| StoreError::Lock)?;
         let mut stmt = conn.prepare(
-            "SELECT site_path, name, is_pinned, last_opened FROM workspace_sites ORDER BY is_pinned DESC, last_opened DESC"
+            "SELECT project_path, name, is_pinned, last_opened FROM workspace_sites ORDER BY is_pinned DESC, last_opened DESC"
         )?;
 
         let rows = stmt.query_map([], |row| {
@@ -202,6 +304,237 @@ impl SqliteStore {
         Ok(list)
     }
 
+    pub fn record_activity(
+        &self,
+        project_path: &Path,
+        kind: &str,
+        title: &str,
+    ) -> Result<String, StoreError> {
+        let id = Uuid::new_v4().to_string();
+        let now = Utc::now().to_rfc3339();
+        let conn = self.conn.lock().map_err(|_| StoreError::Lock)?;
+        conn.execute(
+            "INSERT INTO activities
+             (id, project_path, kind, title, status, detail, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, NULL, ?6, ?6)",
+            params![
+                id,
+                project_path.to_string_lossy(),
+                kind,
+                title,
+                ActivityStatus::Queued.as_str(),
+                now,
+            ],
+        )?;
+        Ok(id)
+    }
+
+    pub fn update_activity(
+        &self,
+        id: &str,
+        status: ActivityStatus,
+        detail: Option<&str>,
+    ) -> Result<bool, StoreError> {
+        let conn = self.conn.lock().map_err(|_| StoreError::Lock)?;
+        let updated = conn.execute(
+            "UPDATE activities
+             SET status = ?1, detail = COALESCE(?2, detail), updated_at = ?3
+             WHERE id = ?4",
+            params![status.as_str(), detail, Utc::now().to_rfc3339(), id],
+        )?;
+        Ok(updated > 0)
+    }
+
+    pub fn list_activities(&self, project_path: &Path) -> Result<Vec<ActivityRecord>, StoreError> {
+        let conn = self.conn.lock().map_err(|_| StoreError::Lock)?;
+        let mut stmt = conn.prepare(
+            "SELECT id, project_path, kind, title, status, detail, created_at, updated_at
+             FROM activities WHERE project_path = ?1 ORDER BY updated_at DESC",
+        )?;
+        let rows = stmt.query_map([project_path.to_string_lossy()], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, String>(4)?,
+                row.get::<_, Option<String>>(5)?,
+                row.get::<_, String>(6)?,
+                row.get::<_, String>(7)?,
+            ))
+        })?;
+
+        rows.map(|row| {
+            let (id, path, kind, title, status, detail, created_at, updated_at) = row?;
+            Ok(ActivityRecord {
+                id,
+                project_path: PathBuf::from(path),
+                kind,
+                title,
+                status: ActivityStatus::parse(status)?,
+                detail,
+                created_at,
+                updated_at,
+            })
+        })
+        .collect()
+    }
+
+    pub fn save_provider_connection(
+        &self,
+        preferences: &ProviderConnectionPreferences,
+    ) -> Result<(), StoreError> {
+        if preferences.id.trim().is_empty() {
+            return Err(StoreError::InvalidProviderConnectionId);
+        }
+        let conn = self.conn.lock().map_err(|_| StoreError::Lock)?;
+        conn.execute(
+            "INSERT INTO provider_connections
+             (id, name, provider, base_url, model, protocol, is_local, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+             ON CONFLICT(id) DO UPDATE SET
+                 name = excluded.name,
+                 provider = excluded.provider,
+                 base_url = excluded.base_url,
+                 model = excluded.model,
+                 protocol = excluded.protocol,
+                 is_local = excluded.is_local,
+                 updated_at = excluded.updated_at",
+            params![
+                preferences.id,
+                preferences.name,
+                preferences.provider.as_str(),
+                preferences.base_url,
+                preferences.model,
+                preferences.protocol.as_str(),
+                preferences.is_local,
+                Utc::now().to_rfc3339(),
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn list_provider_connections(
+        &self,
+    ) -> Result<Vec<ProviderConnectionPreferences>, StoreError> {
+        let conn = self.conn.lock().map_err(|_| StoreError::Lock)?;
+        let mut stmt = conn.prepare(
+            "SELECT id, name, provider, base_url, model, protocol, is_local
+             FROM provider_connections ORDER BY name, id",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, String>(4)?,
+                row.get::<_, String>(5)?,
+                row.get::<_, bool>(6)?,
+            ))
+        })?;
+
+        rows.map(|row| {
+            let (id, name, provider, base_url, model, protocol, is_local) = row?;
+            Ok(ProviderConnectionPreferences {
+                id,
+                name,
+                provider: ProviderKind::parse(&provider)
+                    .ok_or(StoreError::InvalidProviderKind(provider))?,
+                base_url,
+                model,
+                protocol: ProviderProtocol::parse(&protocol)
+                    .ok_or(StoreError::InvalidProviderProtocol(protocol))?,
+                is_local,
+            })
+        })
+        .collect()
+    }
+
+    pub fn save_grade_override(
+        &self,
+        project_path: &Path,
+        grade_override: &GradeOverride,
+    ) -> Result<(), StoreError> {
+        let conn = self.conn.lock().map_err(|_| StoreError::Lock)?;
+        conn.execute(
+            "INSERT INTO project_grade_overrides (project_path, override_json, updated_at)
+             VALUES (?1, ?2, ?3)
+             ON CONFLICT(project_path) DO UPDATE SET
+                 override_json = excluded.override_json,
+                 updated_at = excluded.updated_at",
+            params![
+                project_path.to_string_lossy(),
+                serde_json::to_string(grade_override)?,
+                Utc::now().to_rfc3339(),
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn load_grade_override(
+        &self,
+        project_path: &Path,
+    ) -> Result<Option<GradeOverride>, StoreError> {
+        let conn = self.conn.lock().map_err(|_| StoreError::Lock)?;
+        let mut statement = conn.prepare(
+            "SELECT override_json FROM project_grade_overrides WHERE project_path = ?1",
+        )?;
+        let mut rows = statement.query(params![project_path.to_string_lossy()])?;
+        rows.next()?
+            .map(|row| row.get::<_, String>(0))
+            .transpose()?
+            .map(|json| serde_json::from_str(&json))
+            .transpose()
+            .map_err(StoreError::from)
+    }
+
+    pub fn delete_grade_override(&self, project_path: &Path) -> Result<(), StoreError> {
+        let conn = self.conn.lock().map_err(|_| StoreError::Lock)?;
+        conn.execute(
+            "DELETE FROM project_grade_overrides WHERE project_path = ?1",
+            params![project_path.to_string_lossy()],
+        )?;
+        Ok(())
+    }
+
+    pub fn save_assessment(&self, assessment: &ProjectAssessment) -> Result<(), StoreError> {
+        let conn = self.conn.lock().map_err(|_| StoreError::Lock)?;
+        conn.execute(
+            "INSERT INTO project_assessments
+             (project_path, commit_sha, assessed_at, assessment_json)
+             VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(project_path, commit_sha) DO UPDATE SET
+                 assessed_at = excluded.assessed_at,
+                 assessment_json = excluded.assessment_json",
+            params![
+                assessment.project_path.to_string_lossy(),
+                assessment.commit_sha,
+                assessment.assessed_at,
+                serde_json::to_string(assessment)?,
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn list_assessments(
+        &self,
+        project_path: &Path,
+    ) -> Result<Vec<ProjectAssessment>, StoreError> {
+        let conn = self.conn.lock().map_err(|_| StoreError::Lock)?;
+        let mut statement = conn.prepare(
+            "SELECT assessment_json FROM project_assessments
+             WHERE project_path = ?1 ORDER BY assessed_at DESC",
+        )?;
+        let rows = statement.query_map(params![project_path.to_string_lossy()], |row| {
+            row.get::<_, String>(0)
+        })?;
+        rows.map(|row| {
+            serde_json::from_str(&row?).map_err(StoreError::from)
+        })
+        .collect()
+    }
+
     pub fn save_field_note(
         &self,
         site_path: &Path,
@@ -221,8 +554,8 @@ impl SqliteStore {
 
         let conn = self.conn.lock().map_err(|_| StoreError::Lock)?;
         conn.execute(
-            "INSERT INTO field_notes (id, site_path, file_path, line_start, line_end, commit_sha, created_at, updated_at, user_notes, finding_json)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+            "INSERT INTO field_notes (id, site_path, project_path, file_path, line_start, line_end, commit_sha, created_at, updated_at, user_notes, finding_json)
+             VALUES (?1, ?2, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
             params![
                 id,
                 site_str,
@@ -243,7 +576,7 @@ impl SqliteStore {
     pub fn get_field_note(&self, id: &str) -> Result<Option<FieldNote>, StoreError> {
         let conn = self.conn.lock().map_err(|_| StoreError::Lock)?;
         let mut stmt = conn.prepare(
-            "SELECT id, site_path, file_path, line_start, line_end, commit_sha, created_at, updated_at, user_notes, finding_json
+            "SELECT id, project_path, file_path, line_start, line_end, commit_sha, created_at, updated_at, user_notes, finding_json
              FROM field_notes WHERE id = ?1",
         )?;
 
@@ -284,8 +617,8 @@ impl SqliteStore {
         let site_str = site_path.to_string_lossy().to_string();
         let conn = self.conn.lock().map_err(|_| StoreError::Lock)?;
         let mut stmt = conn.prepare(
-            "SELECT id, site_path, file_path, line_start, line_end, commit_sha, created_at, updated_at, user_notes, finding_json
-             FROM field_notes WHERE site_path = ?1 ORDER BY created_at DESC",
+            "SELECT id, project_path, file_path, line_start, line_end, commit_sha, created_at, updated_at, user_notes, finding_json
+             FROM field_notes WHERE project_path = ?1 ORDER BY created_at DESC",
         )?;
 
         let rows = stmt.query_map(params![site_str], |row| {
@@ -366,7 +699,7 @@ impl SqliteStore {
     pub fn count_field_notes(&self, site_path: &Path) -> Result<usize, StoreError> {
         let site_str = site_path.to_string_lossy().to_string();
         let conn = self.conn.lock().map_err(|_| StoreError::Lock)?;
-        let mut stmt = conn.prepare("SELECT COUNT(*) FROM field_notes WHERE site_path = ?1")?;
+        let mut stmt = conn.prepare("SELECT COUNT(*) FROM field_notes WHERE project_path = ?1")?;
         let count: i64 = stmt.query_row(params![site_str], |r| r.get(0))?;
         Ok(count as usize)
     }
@@ -391,8 +724,8 @@ impl SqliteStore {
 
         let conn = self.conn.lock().map_err(|_| StoreError::Lock)?;
         conn.execute(
-            "INSERT OR REPLACE INTO finding_cache (site_path, file_path, line_start, line_end, head_commit_sha, created_at, finding_json)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            "INSERT OR REPLACE INTO finding_cache (site_path, project_path, file_path, line_start, line_end, head_commit_sha, created_at, finding_json)
+             VALUES (?1, ?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             params![
                 site_str,
                 file_path,
@@ -418,7 +751,7 @@ impl SqliteStore {
         let conn = self.conn.lock().map_err(|_| StoreError::Lock)?;
         let mut stmt = conn.prepare(
             "SELECT head_commit_sha, finding_json FROM finding_cache
-             WHERE site_path = ?1 AND file_path = ?2 AND line_start = ?3 AND line_end = ?4",
+             WHERE project_path = ?1 AND file_path = ?2 AND line_start = ?3 AND line_end = ?4",
         )?;
 
         let mut rows = stmt.query(params![
@@ -433,7 +766,12 @@ impl SqliteStore {
             let finding_json: String = row.get(1)?;
 
             if cached_sha == head_commit_sha
-                || self.is_cache_valid_for_head(site_path, file_path, &cached_sha, head_commit_sha)?
+                || self.is_cache_valid_for_head(
+                    site_path,
+                    file_path,
+                    &cached_sha,
+                    head_commit_sha,
+                )?
             {
                 let finding: Finding = serde_json::from_str(&finding_json)?;
                 return Ok(Some(finding));
@@ -474,4 +812,36 @@ impl SqliteStore {
             _ => Ok(false),
         }
     }
+}
+
+fn migrate_project_paths(conn: &Connection) -> Result<(), rusqlite::Error> {
+    for table in ["field_notes", "finding_cache", "workspace_sites"] {
+        let has_project_path = conn
+            .prepare(&format!("PRAGMA table_info({table})"))?
+            .query_map([], |row| row.get::<_, String>(1))?
+            .collect::<Result<Vec<_>, _>>()?
+            .iter()
+            .any(|column| column == "project_path");
+
+        if !has_project_path {
+            conn.execute(
+                &format!("ALTER TABLE {table} ADD COLUMN project_path TEXT"),
+                [],
+            )?;
+        }
+        conn.execute(
+            &format!(
+                "UPDATE {table} SET project_path = site_path \
+                 WHERE project_path IS NULL OR project_path = ''"
+            ),
+            [],
+        )?;
+        conn.execute(
+            &format!(
+                "CREATE INDEX IF NOT EXISTS idx_{table}_project_path ON {table}(project_path)"
+            ),
+            [],
+        )?;
+    }
+    Ok(())
 }

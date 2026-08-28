@@ -1,7 +1,7 @@
+use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
-use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::budget::{rank_and_budget_evidence, BudgetConfig, ExcludedEvidence};
@@ -63,6 +63,7 @@ pub struct BudgetSummary {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Finding {
+    #[serde(rename = "project_path", alias = "site_path")]
     pub site_path: PathBuf,
     pub file_path: String,
     pub line_range: LineRange,
@@ -71,6 +72,20 @@ pub struct Finding {
     pub why: WhyRationale,
     pub budget_summary: BudgetSummary,
     pub staleness: StalenessStatus,
+}
+
+pub fn provider_prompt(current_code: &str, evidence: &[Evidence]) -> String {
+    let mut prompt_evidence = String::new();
+    for item in evidence {
+        prompt_evidence.push_str(&format!(
+            "Commit: {}\nAuthor: {}\nDate: {}\nMessage: {}\n\n",
+            item.commit_sha, item.author, item.timestamp, item.message
+        ));
+    }
+    format!(
+        "You are Subsurface. Given the code selection and the recorded git evidence below, explain why this code exists in plain concise sentences. Only cite reasons supported directly by the evidence.\n\nCode selection:\n```\n{}\n```\n\nEvidence:\n{}",
+        current_code, prompt_evidence
+    )
 }
 
 /// The single seam through which UI, MCP server, and Site Report all operate.
@@ -174,15 +189,9 @@ pub fn excavate(
             evidence_citations: Vec::new(),
         },
         Confidence::Stated | Confidence::Inferred => {
-            let mut prompt_evidence = String::new();
             let mut citations = Vec::new();
 
             for ev in &included_evidence {
-                prompt_evidence.push_str(&format!(
-                    "Commit: {}\nAuthor: {}\nDate: {}\nMessage: {}\n\n",
-                    ev.commit_sha, ev.author, ev.timestamp, ev.message
-                ));
-
                 let first_msg_line = ev.message.lines().next().unwrap_or("").to_string();
                 citations.push(EvidenceCitation {
                     claim: format!(
@@ -198,10 +207,7 @@ pub fn excavate(
                 });
             }
 
-            let prompt = format!(
-                "You are Subsurface. Given the code selection and the recorded git evidence below, explain why this code exists in plain concise sentences. Only cite reasons supported directly by the evidence.\n\nCode selection:\n```\n{}\n```\n\nEvidence:\n{}",
-                current_code, prompt_evidence
-            );
+            let prompt = provider_prompt(&current_code, &included_evidence);
 
             let rationale = match provider.complete(&prompt) {
                 Ok(resp) => resp,

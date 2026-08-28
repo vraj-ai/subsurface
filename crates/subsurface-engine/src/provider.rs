@@ -1,5 +1,12 @@
-use std::process::Command;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
+use std::collections::BTreeSet;
+use std::io::Read;
+use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
+use std::sync::{Arc, Mutex};
+use std::thread;
+use std::time::{Duration, Instant};
 use thiserror::Error;
 
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
@@ -10,6 +17,14 @@ pub enum ProviderError {
     Auth(String),
     #[error("Rate limited: {0}")]
     RateLimit(String),
+    #[error("Provider timed out: {0}")]
+    Timeout(String),
+    #[error("Malformed provider response: {0}")]
+    MalformedResponse(String),
+    #[error("Offline mode blocks provider requests")]
+    Offline,
+    #[error("Review and allow this payload before sending it")]
+    ConsentRequired,
     #[error("Provider error: {0}")]
     Other(String),
 }
@@ -17,6 +32,500 @@ pub enum ProviderError {
 /// The single trait for inference providers.
 pub trait Provider: Send + Sync {
     fn complete(&self, prompt: &str) -> Result<String, ProviderError>;
+
+    fn request_payload(&self, prompt: &str) -> Value {
+        Value::String(prompt.to_owned())
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ConsentDecision {
+    AllowOnce,
+    AlwaysAllowProject,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct PayloadPreview {
+    pub project_path: PathBuf,
+    pub payload: Value,
+    pub payload_bytes: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct OutboundPolicy {
+    offline: bool,
+    always_allowed_projects: BTreeSet<PathBuf>,
+}
+
+impl OutboundPolicy {
+    pub fn new(offline: bool) -> Self {
+        Self {
+            offline,
+            always_allowed_projects: BTreeSet::new(),
+        }
+    }
+
+    pub fn preview(
+        &self,
+        provider: &dyn Provider,
+        project_path: &Path,
+        prompt: &str,
+    ) -> PayloadPreview {
+        let payload = provider.request_payload(prompt);
+        PayloadPreview {
+            project_path: project_path.to_path_buf(),
+            payload_bytes: serde_json::to_vec(&payload).map_or(0, |bytes| bytes.len()),
+            payload,
+        }
+    }
+
+    pub fn set_offline(&mut self, offline: bool) {
+        self.offline = offline;
+    }
+
+    pub fn complete(
+        &mut self,
+        provider: &dyn Provider,
+        project_path: &Path,
+        prompt: &str,
+        decision: Option<ConsentDecision>,
+    ) -> Result<String, ProviderError> {
+        if self.offline {
+            return Err(ProviderError::Offline);
+        }
+        if self.always_allowed_projects.contains(project_path) {
+            return provider.complete(prompt);
+        }
+        match decision {
+            Some(ConsentDecision::AllowOnce) => provider.complete(prompt),
+            Some(ConsentDecision::AlwaysAllowProject) => {
+                self.always_allowed_projects
+                    .insert(project_path.to_path_buf());
+                provider.complete(prompt)
+            }
+            None => Err(ProviderError::ConsentRequired),
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct ConsentProvider {
+    provider: Arc<dyn Provider>,
+    policy: Arc<Mutex<OutboundPolicy>>,
+    project_path: PathBuf,
+    decision: Option<ConsentDecision>,
+}
+
+impl ConsentProvider {
+    pub fn new(
+        provider: Arc<dyn Provider>,
+        policy: Arc<Mutex<OutboundPolicy>>,
+        project_path: impl Into<PathBuf>,
+        decision: Option<ConsentDecision>,
+    ) -> Self {
+        Self {
+            provider,
+            policy,
+            project_path: project_path.into(),
+            decision,
+        }
+    }
+}
+
+impl Provider for ConsentProvider {
+    fn complete(&self, prompt: &str) -> Result<String, ProviderError> {
+        self.policy
+            .lock()
+            .map_err(|_| ProviderError::Other("Outbound policy lock failed".into()))?
+            .complete(
+                self.provider.as_ref(),
+                &self.project_path,
+                prompt,
+                self.decision,
+            )
+    }
+
+    fn request_payload(&self, prompt: &str) -> Value {
+        self.provider.request_payload(prompt)
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ProviderKind {
+    OpenAi,
+    Xai,
+    OpenRouter,
+    OpenCodeFree,
+    OpenCodeZen,
+    OpenCodeGo,
+    Ollama,
+    Custom,
+}
+
+impl ProviderKind {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::OpenAi => "open_ai",
+            Self::Xai => "xai",
+            Self::OpenRouter => "open_router",
+            Self::OpenCodeFree => "open_code_free",
+            Self::OpenCodeZen => "open_code_zen",
+            Self::OpenCodeGo => "open_code_go",
+            Self::Ollama => "ollama",
+            Self::Custom => "custom",
+        }
+    }
+
+    pub(crate) fn parse(value: &str) -> Option<Self> {
+        match value {
+            "open_ai" => Some(Self::OpenAi),
+            "xai" => Some(Self::Xai),
+            "open_router" => Some(Self::OpenRouter),
+            "open_code_free" => Some(Self::OpenCodeFree),
+            "open_code_zen" => Some(Self::OpenCodeZen),
+            "open_code_go" => Some(Self::OpenCodeGo),
+            "ollama" => Some(Self::Ollama),
+            "custom" => Some(Self::Custom),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ProviderProtocol {
+    ChatCompletions,
+    Responses,
+    Messages,
+}
+
+impl ProviderProtocol {
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            Self::ChatCompletions => "chat_completions",
+            Self::Responses => "responses",
+            Self::Messages => "messages",
+        }
+    }
+
+    pub(crate) fn parse(value: &str) -> Option<Self> {
+        match value {
+            "chat_completions" => Some(Self::ChatCompletions),
+            "responses" => Some(Self::Responses),
+            "messages" => Some(Self::Messages),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ProviderConnectionPreferences {
+    pub id: String,
+    pub name: String,
+    pub provider: ProviderKind,
+    pub base_url: String,
+    pub model: String,
+    pub protocol: ProviderProtocol,
+    pub is_local: bool,
+}
+
+#[derive(Clone)]
+pub struct NativeProvider {
+    pub connection: ProviderConnectionPreferences,
+    api_key: String,
+    timeout: Duration,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ModelDiscovery {
+    pub models: Vec<String>,
+    pub selected_model: String,
+    pub model_field_editable: bool,
+    pub error: Option<String>,
+}
+
+impl NativeProvider {
+    pub fn new(connection: ProviderConnectionPreferences, api_key: impl Into<String>) -> Self {
+        Self {
+            connection,
+            api_key: api_key.into(),
+            timeout: Duration::from_secs(45),
+        }
+    }
+
+    pub fn with_timeout(mut self, timeout: Duration) -> Self {
+        self.timeout = timeout;
+        self
+    }
+
+    pub fn discover_models(&self, selected_model: &str) -> ModelDiscovery {
+        match self.fetch_models() {
+            Ok(models) => ModelDiscovery {
+                models,
+                selected_model: selected_model.into(),
+                model_field_editable: true,
+                error: None,
+            },
+            Err(error) => ModelDiscovery {
+                models: Vec::new(),
+                selected_model: selected_model.into(),
+                model_field_editable: true,
+                error: Some(error.to_string()),
+            },
+        }
+    }
+
+    fn fetch_models(&self) -> Result<Vec<String>, ProviderError> {
+        let endpoint = format!("{}/models", self.connection.base_url.trim_end_matches('/'));
+        let client = self.client()?;
+        let mut request = client.get(endpoint);
+        if !self.api_key.is_empty() {
+            request = request.bearer_auth(&self.api_key);
+        }
+        let response = request.send().map_err(classify_request_error)?;
+        let status = response.status();
+        let response_body = response.text().map_err(classify_request_error)?;
+        if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
+            return Err(ProviderError::Auth(format!("HTTP {status}")));
+        }
+        if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+            return Err(ProviderError::RateLimit(format!("HTTP {status}")));
+        }
+        if !status.is_success() {
+            return Err(ProviderError::Other(format!(
+                "HTTP {status}: {response_body}"
+            )));
+        }
+
+        let response: Value = serde_json::from_str(&response_body)
+            .map_err(|error| ProviderError::MalformedResponse(error.to_string()))?;
+        let entries = response
+            .get("data")
+            .or_else(|| response.get("models"))
+            .and_then(Value::as_array)
+            .ok_or_else(|| {
+                ProviderError::MalformedResponse("model response did not contain a list".into())
+            })?;
+        let mut models: Vec<String> = entries
+            .iter()
+            .filter_map(|entry| {
+                entry
+                    .get("id")
+                    .or_else(|| entry.get("name"))
+                    .and_then(Value::as_str)
+                    .map(str::to_owned)
+            })
+            .collect();
+        models.sort();
+        models.dedup();
+        if models.is_empty() && !entries.is_empty() {
+            return Err(ProviderError::MalformedResponse(
+                "model list entries did not contain id or name".into(),
+            ));
+        }
+        Ok(models)
+    }
+
+    fn request_body(&self, prompt: &str) -> Value {
+        match self.connection.protocol {
+            ProviderProtocol::ChatCompletions => json!({
+                "model": self.connection.model,
+                "messages": [{"role": "user", "content": prompt}],
+            }),
+            ProviderProtocol::Responses => json!({
+                "model": self.connection.model,
+                "input": prompt,
+            }),
+            ProviderProtocol::Messages => json!({
+                "model": self.connection.model,
+                "max_tokens": 2048,
+                "messages": [{"role": "user", "content": prompt}],
+            }),
+        }
+    }
+
+    fn client(&self) -> Result<reqwest::blocking::Client, ProviderError> {
+        reqwest::blocking::Client::builder()
+            .timeout(self.timeout)
+            .redirect(reqwest::redirect::Policy::none())
+            .build()
+            .map_err(|error| ProviderError::Network(error.to_string()))
+    }
+}
+
+impl Provider for NativeProvider {
+    fn complete(&self, prompt: &str) -> Result<String, ProviderError> {
+        let protocol = self.connection.protocol;
+        let endpoint = format!(
+            "{}/{}",
+            self.connection.base_url.trim_end_matches('/'),
+            match protocol {
+                ProviderProtocol::ChatCompletions => "chat/completions",
+                ProviderProtocol::Responses => "responses",
+                ProviderProtocol::Messages => "messages",
+            }
+        );
+        let body = self.request_body(prompt);
+        let client = self.client()?;
+        let mut request = client.post(endpoint).json(&body);
+        if !self.api_key.is_empty() {
+            request = request.bearer_auth(&self.api_key);
+            if protocol == ProviderProtocol::Messages {
+                request = request
+                    .header("x-api-key", &self.api_key)
+                    .header("anthropic-version", "2023-06-01");
+            }
+        }
+        let response = request.send().map_err(classify_request_error)?;
+        let status = response.status();
+        let response_body = response.text().map_err(classify_request_error)?;
+
+        if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
+            return Err(ProviderError::Auth(format!("HTTP {status}")));
+        }
+        if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+            return Err(ProviderError::RateLimit(format!("HTTP {status}")));
+        }
+        if !status.is_success() {
+            return Err(ProviderError::Other(format!(
+                "HTTP {status}: {response_body}"
+            )));
+        }
+
+        let response: Value = serde_json::from_str(&response_body)
+            .map_err(|error| ProviderError::MalformedResponse(error.to_string()))?;
+        let text = match protocol {
+            ProviderProtocol::ChatCompletions => response
+                .pointer("/choices/0/message/content")
+                .and_then(Value::as_str),
+            ProviderProtocol::Responses => response
+                .get("output_text")
+                .and_then(Value::as_str)
+                .or_else(|| {
+                    response
+                        .pointer("/output/0/content/0/text")
+                        .and_then(Value::as_str)
+                }),
+            ProviderProtocol::Messages => {
+                response.pointer("/content/0/text").and_then(Value::as_str)
+            }
+        };
+        text.map(str::to_owned).ok_or_else(|| {
+            ProviderError::MalformedResponse("response did not contain text output".into())
+        })
+    }
+
+    fn request_payload(&self, prompt: &str) -> Value {
+        self.request_body(prompt)
+    }
+}
+
+fn classify_request_error(error: reqwest::Error) -> ProviderError {
+    if error.is_timeout() {
+        ProviderError::Timeout(error.to_string())
+    } else {
+        ProviderError::Network(error.to_string())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OpenCodeBridge {
+    executable: PathBuf,
+    pub version: String,
+}
+
+impl OpenCodeBridge {
+    pub fn detect() -> Option<Self> {
+        Self::from_executable("opencode").ok()
+    }
+
+    pub fn from_executable(executable: impl AsRef<Path>) -> Result<Self, String> {
+        let executable = executable.as_ref().to_path_buf();
+        let version = run_bounded_command(&executable, &["--version"])?;
+        Ok(Self {
+            executable,
+            version: version.trim().to_owned(),
+        })
+    }
+
+    pub fn discover_models(&self, provider: Option<&str>) -> Result<Vec<String>, String> {
+        let mut args = vec!["models"];
+        if let Some(provider) = provider {
+            args.push(provider);
+        }
+        let output = run_bounded_command(&self.executable, &args)?;
+        let mut models: Vec<String> = output
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.is_empty())
+            .map(str::to_owned)
+            .collect();
+        models.sort();
+        models.dedup();
+        Ok(models)
+    }
+}
+
+fn run_bounded_command(executable: &Path, args: &[&str]) -> Result<String, String> {
+    const MAX_OUTPUT_BYTES: usize = 1024 * 1024;
+    const TIMEOUT: Duration = Duration::from_secs(5);
+
+    let mut child = Command::new(executable)
+        .args(args)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|error| error.to_string())?;
+    let stdout = child.stdout.take().ok_or("OpenCode stdout unavailable")?;
+    let stderr = child.stderr.take().ok_or("OpenCode stderr unavailable")?;
+    let stdout_reader = thread::spawn(move || read_capped(stdout, MAX_OUTPUT_BYTES));
+    let stderr_reader = thread::spawn(move || read_capped(stderr, MAX_OUTPUT_BYTES));
+    let started = Instant::now();
+
+    let status = loop {
+        if let Some(status) = child.try_wait().map_err(|error| error.to_string())? {
+            break status;
+        }
+        if started.elapsed() >= TIMEOUT {
+            let _ = child.kill();
+            let _ = child.wait();
+            let _ = stdout_reader.join();
+            let _ = stderr_reader.join();
+            return Err("OpenCode command timed out after 5 seconds".into());
+        }
+        thread::sleep(Duration::from_millis(10));
+    };
+
+    let (stdout, stdout_truncated) = stdout_reader
+        .join()
+        .map_err(|_| "OpenCode stdout reader failed")?;
+    let (stderr, stderr_truncated) = stderr_reader
+        .join()
+        .map_err(|_| "OpenCode stderr reader failed")?;
+    if stdout_truncated || stderr_truncated {
+        return Err("OpenCode command output exceeded 1 MiB".into());
+    }
+    if !status.success() {
+        return Err(String::from_utf8_lossy(&stderr).trim().to_owned());
+    }
+    String::from_utf8(stdout).map_err(|error| error.to_string())
+}
+
+fn read_capped(mut reader: impl Read, limit: usize) -> (Vec<u8>, bool) {
+    let mut kept = Vec::new();
+    let mut chunk = [0; 8192];
+    let mut truncated = false;
+    while let Ok(read) = reader.read(&mut chunk) {
+        if read == 0 {
+            break;
+        }
+        let remaining = limit.saturating_sub(kept.len());
+        kept.extend_from_slice(&chunk[..read.min(remaining)]);
+        truncated |= read > remaining;
+    }
+    (kept, truncated)
 }
 
 /// A deterministic, offline test fake that returns a canned response.
@@ -50,49 +559,87 @@ pub struct ProviderPreset {
 pub const PRESET_OPENAI: ProviderPreset = ProviderPreset {
     name: "OpenAI",
     default_base_url: "https://api.openai.com/v1",
-    suggested_models: &["gpt-4o", "gpt-4o-mini", "o1", "o3-mini"],
+    suggested_models: &[],
 };
 
-pub const PRESET_GROK: ProviderPreset = ProviderPreset {
-    name: "Grok",
+pub const PRESET_XAI: ProviderPreset = ProviderPreset {
+    name: "xAI",
     default_base_url: "https://api.x.ai/v1",
-    suggested_models: &["grok-2", "grok-2-mini"],
+    suggested_models: &[],
 };
+
+pub const PRESET_GROK: ProviderPreset = PRESET_XAI;
 
 pub const PRESET_OPENROUTER: ProviderPreset = ProviderPreset {
     name: "OpenRouter",
     default_base_url: "https://openrouter.ai/api/v1",
-    suggested_models: &[
-        "anthropic/claude-3.5-sonnet",
-        "google/gemini-flash-1.5",
-        "deepseek/deepseek-chat",
-    ],
+    suggested_models: &[],
 };
 
 pub const PRESET_OPENCODE_ZEN: ProviderPreset = ProviderPreset {
     name: "OpenCode Zen",
-    default_base_url: "https://api.opencodezen.com/v1",
-    suggested_models: &["zen-1"],
+    default_base_url: "https://opencode.ai/zen/v1",
+    suggested_models: &[],
+};
+
+pub const PRESET_OPENCODE_FREE: ProviderPreset = ProviderPreset {
+    name: "OpenCode Free",
+    default_base_url: "https://opencode.ai/zen/v1",
+    suggested_models: &[],
+};
+
+pub const PRESET_OPENCODE_GO: ProviderPreset = ProviderPreset {
+    name: "OpenCode Go",
+    default_base_url: "https://opencode.ai/zen/go/v1",
+    suggested_models: &[],
 };
 
 pub const PRESET_OLLAMA: ProviderPreset = ProviderPreset {
     name: "Ollama (Local)",
     default_base_url: "http://localhost:11434/v1",
-    suggested_models: &["llama3.2", "qwen2.5-coder", "mistral"],
+    suggested_models: &[],
+};
+
+pub const PRESET_CUSTOM: ProviderPreset = ProviderPreset {
+    name: "Custom",
+    default_base_url: "",
+    suggested_models: &[],
 };
 
 pub const ALL_PRESETS: &[ProviderPreset] = &[
     PRESET_OPENAI,
-    PRESET_GROK,
+    PRESET_XAI,
     PRESET_OPENROUTER,
+    PRESET_OPENCODE_FREE,
     PRESET_OPENCODE_ZEN,
+    PRESET_OPENCODE_GO,
     PRESET_OLLAMA,
+    PRESET_CUSTOM,
 ];
 
 /// Keychain helper for macOS storing keys securely in the OS keychain.
 pub struct KeychainStore;
 
 impl KeychainStore {
+    pub fn connection_key_service(connection_id: &str) -> Result<String, String> {
+        if connection_id.trim().is_empty() {
+            return Err("Provider connection id cannot be empty".into());
+        }
+        Ok(format!("subsurface.provider.{connection_id}"))
+    }
+
+    pub fn save_connection_key(connection_id: &str, key: &str) -> Result<(), String> {
+        Self::save_key(&Self::connection_key_service(connection_id)?, key)
+    }
+
+    pub fn get_connection_key(connection_id: &str) -> Result<Option<String>, String> {
+        Self::get_key(&Self::connection_key_service(connection_id)?)
+    }
+
+    pub fn delete_connection_key(connection_id: &str) -> Result<(), String> {
+        Self::delete_key(&Self::connection_key_service(connection_id)?)
+    }
+
     pub fn save_key(service: &str, key: &str) -> Result<(), String> {
         let status = Command::new("security")
             .args([
@@ -138,20 +685,14 @@ impl KeychainStore {
 
     pub fn delete_key(service: &str) -> Result<(), String> {
         let _ = Command::new("security")
-            .args([
-                "delete-generic-password",
-                "-a",
-                "subsurface",
-                "-s",
-                service,
-            ])
+            .args(["delete-generic-password", "-a", "subsurface", "-s", service])
             .output();
         Ok(())
     }
 }
 
 /// Generic OpenAI-compatible HTTP inference provider.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct OpenAICompatibleProvider {
     pub base_url: String,
     pub api_key: String,
@@ -159,93 +700,42 @@ pub struct OpenAICompatibleProvider {
 }
 
 impl OpenAICompatibleProvider {
-    pub fn new(base_url: impl Into<String>, api_key: impl Into<String>, model: impl Into<String>) -> Self {
+    pub fn new(
+        base_url: impl Into<String>,
+        api_key: impl Into<String>,
+        model: impl Into<String>,
+    ) -> Self {
         Self {
             base_url: base_url.into().trim_end_matches('/').to_string(),
             api_key: api_key.into(),
             model: model.into(),
         }
     }
-}
 
-#[derive(Serialize)]
-struct ChatCompletionMessage {
-    role: &'static str,
-    content: String,
-}
-
-#[derive(Serialize)]
-struct ChatCompletionRequest {
-    model: String,
-    messages: Vec<ChatCompletionMessage>,
-}
-
-#[derive(serde::Deserialize)]
-struct ChatCompletionChoice {
-    message: ChatCompletionMessageResp,
-}
-
-#[derive(serde::Deserialize)]
-struct ChatCompletionMessageResp {
-    content: Option<String>,
-}
-
-#[derive(serde::Deserialize)]
-struct ChatCompletionResponse {
-    choices: Option<Vec<ChatCompletionChoice>>,
+    fn native_provider(&self) -> NativeProvider {
+        NativeProvider::new(
+            ProviderConnectionPreferences {
+                id: "legacy-openai-compatible".into(),
+                name: "OpenAI Compatible".into(),
+                provider: ProviderKind::Custom,
+                base_url: self.base_url.clone(),
+                model: self.model.clone(),
+                protocol: ProviderProtocol::ChatCompletions,
+                is_local: self.base_url.starts_with("http://localhost")
+                    || self.base_url.starts_with("http://127.0.0.1"),
+            },
+            &self.api_key,
+        )
+    }
 }
 
 impl Provider for OpenAICompatibleProvider {
     fn complete(&self, prompt: &str) -> Result<String, ProviderError> {
-        let endpoint = format!("{}/chat/completions", self.base_url);
-        let client = reqwest::blocking::Client::builder()
-            .timeout(std::time::Duration::from_secs(45))
-            .build()
-            .map_err(|e| ProviderError::Network(e.to_string()))?;
+        self.native_provider().complete(prompt)
+    }
 
-        let request_body = ChatCompletionRequest {
-            model: self.model.clone(),
-            messages: vec![ChatCompletionMessage {
-                role: "user",
-                content: prompt.to_string(),
-            }],
-        };
-
-        let mut req = client.post(&endpoint).json(&request_body);
-        if !self.api_key.is_empty() {
-            req = req.bearer_auth(&self.api_key);
-        }
-
-        let resp = req.send().map_err(|e| ProviderError::Network(e.to_string()))?;
-        let status = resp.status();
-
-        if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
-            return Err(ProviderError::Auth("API key was rejected by provider (401/403)".into()));
-        }
-
-        if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
-            return Err(ProviderError::RateLimit("Rate limit exceeded from provider (429)".into()));
-        }
-
-        if !status.is_success() {
-            let error_text = resp.text().unwrap_or_default();
-            return Err(ProviderError::Other(format!(
-                "HTTP {}: {}",
-                status, error_text
-            )));
-        }
-
-        let body: ChatCompletionResponse = resp
-            .json()
-            .map_err(|e| ProviderError::Other(format!("Failed to parse response JSON: {}", e)))?;
-
-        let content = body
-            .choices
-            .and_then(|c| c.into_iter().next())
-            .and_then(|c| c.message.content)
-            .unwrap_or_default();
-
-        Ok(content)
+    fn request_payload(&self, prompt: &str) -> Value {
+        self.native_provider().request_payload(prompt)
     }
 }
 
@@ -255,8 +745,16 @@ mod tests {
 
     #[test]
     fn test_presets_exist() {
-        assert_eq!(ALL_PRESETS.len(), 5);
+        assert_eq!(ALL_PRESETS.len(), 8);
         assert_eq!(PRESET_OPENAI.default_base_url, "https://api.openai.com/v1");
+        assert_eq!(
+            PRESET_OPENCODE_ZEN.default_base_url,
+            "https://opencode.ai/zen/v1"
+        );
+        assert_eq!(
+            PRESET_OPENCODE_GO.default_base_url,
+            "https://opencode.ai/zen/go/v1"
+        );
         assert_eq!(PRESET_OLLAMA.default_base_url, "http://localhost:11434/v1");
     }
 }

@@ -756,7 +756,7 @@
           <div style="display: flex; align-items: center; gap: 8px;">
             <span style="font-size: 11px; color: var(--text-muted);" id="selectionLabel">Lines: None</span>
             <button class="small" onclick="previewPayload()">Preview Payload</button>
-            <button class="primary small" id="excavateBtn" onclick="runExcavate()">Excavate</button>
+            <button class="primary small" id="excavateBtn" onclick="previewPayload()">Excavate</button>
           </div>
         </div>
         <div class="code-content" id="codeContainer">
@@ -857,10 +857,14 @@
       </div>
       <div class="modal-body">
         <pre id="payloadText" style="font-family: var(--font-code); font-size: 11px; white-space: pre-wrap; color: #c9d1d9;"></pre>
+        <label style="display: flex; gap: 8px; align-items: center; margin-top: 12px;">
+          <input type="checkbox" id="alwaysAllowProject" />
+          Always allow provider payloads for this Project (change later in Settings)
+        </label>
       </div>
       <div class="modal-footer">
         <button onclick="closeModal('payloadModal')">Close</button>
-        <button class="primary" onclick="closeModal('payloadModal'); runExcavate();">Send & Excavate</button>
+        <button class="primary" onclick="confirmPayloadAndExcavate()">Send & Excavate</button>
       </div>
     </div>
   </div>
@@ -1237,14 +1241,23 @@
           startLine: start,
           endLine: end
         });
-        document.getElementById("payloadText").innerText = payload;
+        document.getElementById("payloadText").innerText = JSON.stringify(payload.payload, null, 2);
+        document.getElementById("alwaysAllowProject").checked = false;
         document.getElementById("payloadModal").classList.add("active");
       } catch (err) {
         alert("Preview error: " + err);
       }
     }
 
-    async function runExcavate() {
+    function confirmPayloadAndExcavate() {
+      const consent = document.getElementById("alwaysAllowProject").checked
+        ? "always_allow_project"
+        : "allow_once";
+      closeModal("payloadModal");
+      runExcavate(consent);
+    }
+
+    async function runExcavate(consent = null) {
       if (!currentSite || !currentFile || selectedStartLine === null) {
         alert("Please select a file and line range first.");
         return;
@@ -1261,7 +1274,8 @@
           sitePath: currentSite.root_path,
           filePath: currentFile,
           startLine: start,
-          endLine: end
+          endLine: end,
+          consent
         });
         currentFinding = finding;
         renderFinding(finding);
@@ -1460,12 +1474,14 @@
       const baseUrl = document.getElementById("settingBaseUrl").value.trim();
       const model = document.getElementById("settingModel").value.trim();
       const apiKey = document.getElementById("settingApiKey").value;
+      const offlineMode = document.getElementById("settingOfflineMode").checked;
 
       try {
         const res = await invokeBackend("test_provider_connection", {
           baseUrl,
           apiKey: apiKey || null,
-          model
+          model,
+          offlineMode
         });
         resSpan.innerText = "✓ Connected successfully";
         resSpan.style.color = "var(--accent-green)";
@@ -1590,7 +1606,7 @@
         const num = parseInt(row.dataset.line);
         row.classList.toggle("selected", num >= start && num <= end);
       });
-      await runExcavate();
+      await previewPayload();
     }
 
     async function saveNote() {
