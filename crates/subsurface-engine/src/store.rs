@@ -12,6 +12,7 @@ use crate::evidence::LineRange;
 use crate::excavate::Finding;
 use crate::grade::GradeOverride;
 use crate::provider::{ProviderConnectionPreferences, ProviderKind, ProviderProtocol};
+use crate::tree::ProjectTreeState;
 
 #[derive(Debug, Error)]
 pub enum StoreError {
@@ -204,6 +205,12 @@ impl SqliteStore {
                 assessed_at TEXT NOT NULL,
                 assessment_json TEXT NOT NULL,
                 PRIMARY KEY (project_path, commit_sha)
+            );
+
+            CREATE TABLE IF NOT EXISTS project_tree_state (
+                project_path TEXT PRIMARY KEY,
+                state_json TEXT NOT NULL,
+                updated_at TEXT NOT NULL
             );",
         )?;
         migrate_project_paths(&conn)?;
@@ -477,9 +484,8 @@ impl SqliteStore {
         project_path: &Path,
     ) -> Result<Option<GradeOverride>, StoreError> {
         let conn = self.conn.lock().map_err(|_| StoreError::Lock)?;
-        let mut statement = conn.prepare(
-            "SELECT override_json FROM project_grade_overrides WHERE project_path = ?1",
-        )?;
+        let mut statement = conn
+            .prepare("SELECT override_json FROM project_grade_overrides WHERE project_path = ?1")?;
         let mut rows = statement.query(params![project_path.to_string_lossy()])?;
         rows.next()?
             .map(|row| row.get::<_, String>(0))
@@ -496,6 +502,43 @@ impl SqliteStore {
             params![project_path.to_string_lossy()],
         )?;
         Ok(())
+    }
+
+    pub fn save_tree_state(
+        &self,
+        project_path: &Path,
+        state: &ProjectTreeState,
+    ) -> Result<(), StoreError> {
+        let conn = self.conn.lock().map_err(|_| StoreError::Lock)?;
+        conn.execute(
+            "INSERT INTO project_tree_state (project_path, state_json, updated_at)
+             VALUES (?1, ?2, ?3)
+             ON CONFLICT(project_path) DO UPDATE SET
+                 state_json = excluded.state_json,
+                 updated_at = excluded.updated_at",
+            params![
+                project_path.to_string_lossy(),
+                serde_json::to_string(state)?,
+                Utc::now().to_rfc3339(),
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn load_tree_state(
+        &self,
+        project_path: &Path,
+    ) -> Result<Option<ProjectTreeState>, StoreError> {
+        let conn = self.conn.lock().map_err(|_| StoreError::Lock)?;
+        let mut statement =
+            conn.prepare("SELECT state_json FROM project_tree_state WHERE project_path = ?1")?;
+        let mut rows = statement.query(params![project_path.to_string_lossy()])?;
+        rows.next()?
+            .map(|row| row.get::<_, String>(0))
+            .transpose()?
+            .map(|json| serde_json::from_str(&json))
+            .transpose()
+            .map_err(StoreError::from)
     }
 
     pub fn save_assessment(&self, assessment: &ProjectAssessment) -> Result<(), StoreError> {
@@ -529,10 +572,8 @@ impl SqliteStore {
         let rows = statement.query_map(params![project_path.to_string_lossy()], |row| {
             row.get::<_, String>(0)
         })?;
-        rows.map(|row| {
-            serde_json::from_str(&row?).map_err(StoreError::from)
-        })
-        .collect()
+        rows.map(|row| serde_json::from_str(&row?).map_err(StoreError::from))
+            .collect()
     }
 
     pub fn save_field_note(

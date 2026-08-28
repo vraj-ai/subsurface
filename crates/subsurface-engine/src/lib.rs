@@ -20,4 +20,5 @@ pub mod runtime;
 pub mod site;
 pub mod staleness;
 pub mod store;
+pub mod tree;
 pub mod workspace;
