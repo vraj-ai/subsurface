@@ -495,7 +495,7 @@ const FINGERPRINT_KIND: &str = "subsurface-work-item:sha256:";
 
 /// Approved change proposal ready to publish as a GitHub Work Item.
 /// Identity comes from an approved Opportunity; the published artifact is a Work Item.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub struct WorkItemDraft {
     pub id: String,
     pub title: String,
@@ -536,6 +536,33 @@ pub struct RenderedWorkItem {
     pub title: String,
     pub body: String,
     pub fingerprint: String,
+}
+
+/// Tracker state of a published GitHub Work Item. Close is not quality proof.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum WorkItemTrackerState {
+    Open,
+    Closed,
+}
+
+/// Editable preview shown before a manual GitHub publish.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct WorkItemPreview {
+    pub title: String,
+    pub body: String,
+    pub fingerprint: String,
+    pub destination: GitHubDestination,
+}
+
+impl WorkItemPreview {
+    pub fn edit_title(&mut self, title: impl Into<String>) {
+        self.title = title.into();
+    }
+
+    pub fn edit_body(&mut self, body: impl Into<String>) {
+        self.body = ensure_fingerprint_marker(body.into(), &self.fingerprint);
+    }
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -670,6 +697,32 @@ pub fn render_work_item(
     }
 }
 
+/// Manual publish starts from this editable preview, not a silent write.
+pub fn preview_work_item(
+    destination: &GitHubDestination,
+    draft: &WorkItemDraft,
+) -> WorkItemPreview {
+    let rendered = render_work_item(destination, draft);
+    WorkItemPreview {
+        title: rendered.title,
+        body: rendered.body,
+        fingerprint: rendered.fingerprint,
+        destination: destination.clone(),
+    }
+}
+
+fn ensure_fingerprint_marker(body: String, fingerprint: &str) -> String {
+    let marker = fingerprint_marker(fingerprint);
+    if body.contains(&marker) {
+        body
+    } else {
+        format!(
+            "{}\n\n---\n`{marker}`\n<!-- {marker} -->\n",
+            body.trim_end()
+        )
+    }
+}
+
 fn push_named_list(sections: &mut Vec<String>, heading: &str, items: &[String]) {
     sections.push(String::new());
     sections.push(format!("{heading}:"));
@@ -692,11 +745,34 @@ pub fn publish_work_item(
     draft: &WorkItemDraft,
 ) -> Result<PublishedWorkItem, GitHubError> {
     let rendered = render_work_item(destination, draft);
+    publish_rendered(client, destination, auth, &rendered)
+}
+
+/// Publish the (possibly edited) manual preview. Fingerprint recovery is unchanged.
+pub fn publish_work_item_preview(
+    client: &GitHubClient,
+    auth: &GitHubAuth,
+    preview: &WorkItemPreview,
+) -> Result<PublishedWorkItem, GitHubError> {
+    let rendered = RenderedWorkItem {
+        title: preview.title.clone(),
+        body: ensure_fingerprint_marker(preview.body.clone(), &preview.fingerprint),
+        fingerprint: preview.fingerprint.clone(),
+    };
+    publish_rendered(client, &preview.destination, auth, &rendered)
+}
+
+fn publish_rendered(
+    client: &GitHubClient,
+    destination: &GitHubDestination,
+    auth: &GitHubAuth,
+    rendered: &RenderedWorkItem,
+) -> Result<PublishedWorkItem, GitHubError> {
     if let Some(existing) = find_work_item(client, destination, auth, &rendered.fingerprint)? {
         return Ok(existing);
     }
 
-    match create_work_item(client, destination, auth, &rendered) {
+    match create_work_item(client, destination, auth, rendered) {
         Ok(created) => Ok(created),
         Err(GitHubError::Timeout(message)) => {
             match find_work_item(client, destination, auth, &rendered.fingerprint)? {
@@ -705,6 +781,41 @@ pub fn publish_work_item(
             }
         }
         Err(error) => Err(error),
+    }
+}
+
+/// Read tracker state for a known Work Item. Close is not Opportunity resolution.
+pub fn fetch_work_item_state(
+    client: &GitHubClient,
+    destination: &GitHubDestination,
+    auth: &GitHubAuth,
+    number: u64,
+) -> Result<WorkItemTrackerState, GitHubError> {
+    let url = format!(
+        "{}/repos/{}/{}/issues/{}",
+        client.base_url, destination.owner, destination.repo, number
+    );
+    let response = authorized(client, auth)?
+        .get(&url)
+        .send()
+        .map_err(classify_github_error)?;
+    let status = response.status();
+    let body = response.text().map_err(classify_github_error)?;
+    if !status.is_success() {
+        return Err(GitHubError::Api(format!("HTTP {status}: {body}")));
+    }
+    let issue: IssueResponse = serde_json::from_str(&body)
+        .map_err(|error| GitHubError::MalformedResponse(error.to_string()))?;
+    parse_tracker_state(issue.state.as_deref().unwrap_or("open"))
+}
+
+fn parse_tracker_state(value: &str) -> Result<WorkItemTrackerState, GitHubError> {
+    match value {
+        "open" => Ok(WorkItemTrackerState::Open),
+        "closed" => Ok(WorkItemTrackerState::Closed),
+        other => Err(GitHubError::MalformedResponse(format!(
+            "unknown issue state: {other}"
+        ))),
     }
 }
 
@@ -840,6 +951,8 @@ struct IssueResponse {
     html_url: String,
     #[serde(default)]
     body: Option<String>,
+    #[serde(default)]
+    state: Option<String>,
 }
 
 fn classify_github_error(error: reqwest::Error) -> GitHubError {

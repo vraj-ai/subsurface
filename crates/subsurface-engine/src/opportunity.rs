@@ -1,11 +1,16 @@
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+use crate::github::{
+    preview_work_item, GitHubDestination, PublishedWorkItem, WorkItemDraft, WorkItemPreview,
+    WorkItemTrackerState,
+};
 use crate::report::{SiteReport, SiteReportCategory};
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum OpportunityState {
+    #[default]
     Detected,
     Prepared,
     Verified,
@@ -13,6 +18,9 @@ pub enum OpportunityState {
     Published,
     Dismissed,
 }
+
+/// Work Item publication uses this name. Same lifecycle as `OpportunityState`.
+pub type OpportunityStatus = OpportunityState;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -94,6 +102,14 @@ pub struct OpportunityEvent {
     pub receipt: Option<ImprovementReceipt>,
 }
 
+/// Fresh Project Assessment proof that an Improvement Receipt landed.
+/// A closed GitHub Work Item is never this proof.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub struct Reassessment {
+    pub proves_improvement_receipt: bool,
+}
+
+/// Evidence-backed candidate. Publish is a Work Item; resolve is a new Assessment.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct Opportunity {
     pub id: String,
@@ -103,6 +119,17 @@ pub struct Opportunity {
     pub state: OpportunityState,
     pub rank: OpportunityRank,
     pub events: Vec<OpportunityEvent>,
+    /// Work Item publication alias for `state`.
+    #[serde(skip)]
+    pub status: OpportunityStatus,
+    #[serde(skip)]
+    pub draft: WorkItemDraft,
+    #[serde(skip)]
+    published: Option<PublishedWorkItem>,
+    #[serde(skip)]
+    tracker_state: Option<WorkItemTrackerState>,
+    #[serde(skip)]
+    resolved: bool,
 }
 
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -123,10 +150,13 @@ impl Opportunity {
         receipt: ImprovementReceipt,
     ) -> Self {
         rank.verification = Verification::NotRun;
+        let id = id.into();
+        let finding_id = finding_id.into();
+        let file_path = file_path.into();
         Self {
-            id: id.into(),
-            finding_ids: vec![finding_id.into()],
-            file_path: file_path.into(),
+            id: id.clone(),
+            finding_ids: vec![finding_id.clone()],
+            file_path: file_path.clone(),
             category,
             state: OpportunityState::Detected,
             rank,
@@ -135,6 +165,20 @@ impl Opportunity {
                 at: at.into(),
                 receipt: Some(receipt),
             }],
+            status: OpportunityStatus::Detected,
+            draft: WorkItemDraft {
+                id,
+                title: String::new(),
+                category: category_name(category).into(),
+                file_path,
+                summary: String::new(),
+                evidence_ids: vec![finding_id],
+                base_commit: None,
+                receipt: None,
+            },
+            published: None,
+            tracker_state: None,
+            resolved: false,
         }
     }
 
@@ -167,12 +211,72 @@ impl Opportunity {
             _ => {}
         }
         self.state = next;
+        self.status = next;
         self.events.push(OpportunityEvent {
             state: next,
             at: at.into(),
             receipt: Some(receipt),
         });
         Ok(())
+    }
+
+    pub fn verified(draft: WorkItemDraft) -> Self {
+        let category = category_from_name(&draft.category);
+        Self {
+            id: draft.id.clone(),
+            finding_ids: draft.evidence_ids.clone(),
+            file_path: draft.file_path.clone(),
+            category,
+            state: OpportunityState::Verified,
+            rank: OpportunityRank {
+                impact: Impact::Medium,
+                verification: Verification::Verified,
+                expected_grade_improvement: 0,
+                effort: Effort::Medium,
+                age_days: 0,
+            },
+            events: vec![],
+            status: OpportunityStatus::Verified,
+            draft,
+            published: None,
+            tracker_state: None,
+            resolved: false,
+        }
+    }
+
+    pub fn preview(&self, destination: &GitHubDestination) -> WorkItemPreview {
+        preview_work_item(destination, &self.draft)
+    }
+
+    pub fn record_publication(&mut self, published: PublishedWorkItem) {
+        self.published = Some(published);
+        self.status = OpportunityStatus::Published;
+        self.state = OpportunityState::Published;
+        self.tracker_state = Some(WorkItemTrackerState::Open);
+    }
+
+    pub fn published_work_item(&self) -> Option<&PublishedWorkItem> {
+        self.published.as_ref()
+    }
+
+    pub fn tracker_state(&self) -> Option<WorkItemTrackerState> {
+        self.tracker_state
+    }
+
+    /// Closing a Work Item changes tracker state only.
+    pub fn observe_tracker_state(&mut self, state: WorkItemTrackerState) {
+        self.tracker_state = Some(state);
+    }
+
+    pub fn is_resolved(&self) -> bool {
+        self.resolved
+    }
+
+    /// The Opportunity resolves only after a fresh Assessment proves its receipt.
+    pub fn apply_reassessment(&mut self, reassessment: Reassessment) {
+        if reassessment.proves_improvement_receipt {
+            self.resolved = true;
+        }
     }
 }
 
@@ -346,5 +450,14 @@ fn category_name(category: OpportunityCategory) -> &'static str {
         OpportunityCategory::MissingRationale => "missing-rationale",
         OpportunityCategory::TestGap => "test-gap",
         OpportunityCategory::ModelProposed => "model-proposed",
+    }
+}
+
+fn category_from_name(name: &str) -> OpportunityCategory {
+    match name {
+        "dead-workaround" => OpportunityCategory::DeadWorkaround,
+        "test-gap" => OpportunityCategory::TestGap,
+        "model-proposed" => OpportunityCategory::ModelProposed,
+        _ => OpportunityCategory::MissingRationale,
     }
 }
