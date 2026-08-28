@@ -109,6 +109,17 @@ fn list_project_activities(
 }
 
 #[tauri::command]
+fn cancel_project_activity(
+    activity_id: String,
+    state: State<'_, AppState>,
+) -> Result<bool, String> {
+    state
+        .store
+        .update_activity(&activity_id, ActivityStatus::Cancelled, Some("Cancelled"))
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn get_home_workspace(state: State<'_, AppState>) -> Result<HomeWorkspaceData, String> {
     let workspace_records = state.store.list_workspace_sites().unwrap_or_default();
     let custom_scan_roots = state.store.list_scan_roots().unwrap_or_default();
@@ -494,6 +505,7 @@ fn main() {
             open_project,
             open_site,
             list_project_activities,
+            cancel_project_activity,
             get_home_workspace,
             toggle_pin_site,
             add_scan_root,

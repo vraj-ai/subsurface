@@ -390,6 +390,138 @@ fn oklch_to_linear_srgb(l: f64, c: f64, h_deg: f64) -> (f64, f64, f64) {
     (r, g, b)
 }
 
+#[test]
+fn activity_center_survives_navigation() {
+    let activity = extract_surface(UI_BUNDLE, "activity");
+    assert!(
+        !activity.trim().is_empty(),
+        "Activity center is missing from the UI bundle"
+    );
+    assert!(
+        activity.contains("activity-strip"),
+        "Activity is the Shell's bottom strip"
+    );
+    assert!(
+        !activity.contains("view-container"),
+        "Activity is not a navigable view-container room"
+    );
+
+    let strip_css = css_block(UI_BUNDLE, ".activity-strip");
+    assert!(
+        strip_css.contains("position: fixed") && strip_css.contains("bottom: 0"),
+        "Activity must be a persistent bottom strip"
+    );
+    assert!(
+        strip_css.contains("display: flex") && !strip_css.contains("display: none"),
+        "Activity stays mounted; it is not a hidden view"
+    );
+
+    let home_pos = UI_BUNDLE
+        .find("id=\"homeView\"")
+        .expect("home view missing");
+    let code_pos = UI_BUNDLE
+        .find("id=\"codeView\"")
+        .expect("code view missing");
+    let activity_pos = UI_BUNDLE
+        .find("data-surface=\"activity\"")
+        .expect("activity surface missing");
+    assert!(
+        activity_pos > home_pos && activity_pos > code_pos,
+        "Activity is a Shell sibling after the views so navigation cannot unmount it"
+    );
+
+    let settings = extract_surface(UI_BUNDLE, "settings");
+    assert!(
+        !settings.contains("data-surface=\"activity\""),
+        "Settings sheet does not unmount Activity"
+    );
+    let overlay_css = css_block(UI_BUNDLE, ".sheet-overlay");
+    assert!(
+        overlay_css.contains("bottom: var(--activity-strip-height)")
+            || overlay_css.contains("z-index: 100"),
+        "Settings sheet overlays the Shell without replacing Activity"
+    );
+
+    assert!(
+        activity.contains("data-activity-list"),
+        "Activity center lists durable work"
+    );
+    assert!(
+        activity.contains("No in-flight work."),
+        "empty Activity state must name that no work is in flight"
+    );
+
+    assert!(
+        UI_BUNDLE.contains("list_project_activities"),
+        "Activity center reads durable records from the engine store"
+    );
+    assert!(
+        UI_BUNDLE.contains("function refreshActivityCenter")
+            || UI_BUNDLE.contains("async function refreshActivityCenter"),
+        "Activity center refreshes without being recreated"
+    );
+    assert!(
+        UI_BUNDLE.contains("function renderActivityCenter"),
+        "Activity center renders progress, receipts, and failures"
+    );
+    assert!(
+        UI_BUNDLE.contains("function cancelActivity"),
+        "cancellation is an explicit Activity action"
+    );
+    assert!(
+        UI_BUNDLE.contains("cancel_project_activity"),
+        "Activity cancel uses the durable store, not navigation"
+    );
+
+    for kind in [
+        "assessment",
+        "preparation",
+        "verification",
+        "publication",
+    ] {
+        assert!(
+            UI_BUNDLE.contains(&format!("\"{kind}\"")),
+            "Activity center tracks {kind}"
+        );
+    }
+
+    let renderer = js_function_body(UI_BUNDLE, "renderActivityCenter");
+    for needle in [
+        "queued",
+        "running",
+        "succeeded",
+        "failed",
+        "cancelled",
+        "activity-progress",
+        "activity-receipt",
+    ] {
+        assert!(
+            renderer.contains(needle),
+            "Activity center must show {needle}"
+        );
+    }
+
+    for name in [
+        "showHomeView",
+        "showCodeView",
+        "closeModal",
+        "loadFile",
+        "openSettingsModal",
+    ] {
+        let body = js_function_body(UI_BUNDLE, name);
+        assert!(
+            !body.contains("cancelActivity") && !body.contains("cancel_project_activity"),
+            "{name} must not cancel work"
+        );
+        assert!(
+            !body.contains("activityStrip")
+                && !body.contains("activity-strip")
+                && !body.contains("data-surface=\"activity\""),
+            "{name} must not unmount or hide Activity"
+        );
+    }
+}
+
 fn extract_strata_surface(html: &str) -> String {
     const MARK: &str = "data-surface=\"strata\"";
     let start = html
@@ -486,4 +618,30 @@ fn extract_surface(html: &str, surface: &str) -> String {
 fn sheet_uses_overlay_css(html: &str) -> bool {
     let overlay = css_block(html, ".sheet-overlay");
     overlay.contains("position: fixed") && overlay.contains("display: none")
+}
+
+fn js_function_body(html: &str, name: &str) -> String {
+    let async_fn = format!("async function {name}(");
+    let sync_fn = format!("function {name}(");
+    let start = html
+        .find(&async_fn)
+        .or_else(|| html.find(&sync_fn))
+        .unwrap_or_else(|| panic!("missing function {name}"));
+    let rest = &html[start..];
+    let mut cut = rest.len();
+    for (idx, _) in rest.match_indices('\n') {
+        if idx == 0 {
+            continue;
+        }
+        let line = rest[idx + 1..].split('\n').next().unwrap_or("");
+        if line.starts_with("    function ") || line.starts_with("    async function ") {
+            cut = idx;
+            break;
+        }
+        if line.starts_with("  </script>") || line.starts_with("</script>") {
+            cut = idx;
+            break;
+        }
+    }
+    rest[..cut].to_string()
 }

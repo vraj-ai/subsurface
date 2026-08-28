@@ -47,6 +47,7 @@
   --space-4: 16px;
   --radius-control: 6px;
   --hit-area: 28px;
+  --activity-strip-height: 36px;
 
   /* Light climate (named for the contrast checker). */
   --light-bg-dark: oklch(0.946 0.008 236.6);
