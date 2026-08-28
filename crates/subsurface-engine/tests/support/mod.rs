@@ -43,6 +43,7 @@ impl StubResponse {
     fn render(&self) -> String {
         let reason = match self.status {
             200 => "OK",
+            201 => "Created",
             401 => "Unauthorized",
             403 => "Forbidden",
             429 => "Too Many Requests",
@@ -109,8 +110,12 @@ impl LocalHttpFake {
                             StubResponse::json(200, r#"{"ok":true}"#)
                         }
                     });
-                    thread::sleep(response.delay);
-                    let _ = stream.write_all(response.render().as_bytes());
+                    // Handle each connection on its own thread so a delayed
+                    // create can time out while a fingerprint search proceeds.
+                    thread::spawn(move || {
+                        thread::sleep(response.delay);
+                        let _ = stream.write_all(response.render().as_bytes());
+                    });
                 }
                 Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
                     thread::sleep(Duration::from_millis(1));
